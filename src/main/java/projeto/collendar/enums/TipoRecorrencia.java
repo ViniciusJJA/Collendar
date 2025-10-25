@@ -1,4 +1,4 @@
-package projeto.collendar.model.enums;
+package projeto.collendar.enums;
 
 public enum TipoRecorrencia {
 

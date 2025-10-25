@@ -1,23 +1,21 @@
 package projeto.collendar.model;
 
 import jakarta.persistence.*;
-import jakarta.validation.constraints.NotBlank;
-import lombok.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.util.UUID;
 
 @Entity
 @Table(name = "roles")
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-@EqualsAndHashCode(of = "id")
+@Getter
+@Setter
 public class Role {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    private UUID id;
 
-    @NotBlank(message = "Nome da role é obrigatório")
-    @Column(nullable = false, unique = true, length = 50)
+    @Column(unique = true)
     private String nome;
 }
