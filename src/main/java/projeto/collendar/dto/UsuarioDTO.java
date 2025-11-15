@@ -18,3 +18,4 @@ public class UsuarioDTO {
     private Boolean ativo;
     private Set<String> roles;
 }
+//comentário

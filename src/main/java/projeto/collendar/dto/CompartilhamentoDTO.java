@@ -20,3 +20,4 @@ public class CompartilhamentoDTO {
     private TipoPermissao permissao;
     private LocalDateTime createdAt;
 }
+//comentário
