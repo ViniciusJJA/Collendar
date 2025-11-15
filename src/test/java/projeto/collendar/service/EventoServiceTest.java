@@ -1,7 +1,6 @@
 package projeto.collendar.service;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -22,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+@DisplayNameGeneration(DisplayNameGenerator.ReplaceUnderscores.class)
 @ExtendWith(MockitoExtension.class)
 class EventoServiceTest {
 
@@ -34,247 +34,348 @@ class EventoServiceTest {
     @InjectMocks
     private EventoService eventoService;
 
-    private Evento evento;
-    private Calendario calendario;
-    private UUID eventoId;
-    private UUID calendarioId;
-    private LocalDateTime dataInicio;
-    private LocalDateTime dataFim;
+    @Nested
+    class Dado_um_evento_valido {
 
-    @BeforeEach
-    void setUp() {
-        eventoId = UUID.randomUUID();
-        calendarioId = UUID.randomUUID();
-        dataInicio = LocalDateTime.now();
-        dataFim = dataInicio.plusHours(2);
+        Evento evento;
+        Calendario calendario;
+        UUID eventoId;
+        UUID calendarioId;
+        LocalDateTime dataInicio;
+        LocalDateTime dataFim;
 
-        calendario = new Calendario();
-        calendario.setId(calendarioId);
-        calendario.setNome("Trabalho");
+        @BeforeEach
+        void setup() {
+            eventoId = UUID.randomUUID();
+            calendarioId = UUID.randomUUID();
+            dataInicio = LocalDateTime.now();
+            dataFim = dataInicio.plusHours(2);
 
-        evento = new Evento();
-        evento.setId(eventoId);
-        evento.setTitulo("Reunião");
-        evento.setDescricao("Reunião de equipe");
-        evento.setDataInicio(dataInicio);
-        evento.setDataFim(dataFim);
-        evento.setCalendario(calendario);
-        evento.setDiaInteiro(false);
-        evento.setRecorrente(false);
-    }
+            calendario = new Calendario();
+            calendario.setId(calendarioId);
+            calendario.setNome("Trabalho");
 
-    @Test
-    void deveCriarEventoComSucesso() {
-        when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
-        when(eventoRepository.save(any(Evento.class))).thenReturn(evento);
+            evento = new Evento();
+            evento.setId(eventoId);
+            evento.setTitulo("Reunião");
+            evento.setDescricao("Reunião de equipe");
+            evento.setDataInicio(dataInicio);
+            evento.setDataFim(dataFim);
+            evento.setCalendario(calendario);
+            evento.setDiaInteiro(false);
+            evento.setRecorrente(false);
+        }
 
-        Evento resultado = eventoService.criar(evento, calendarioId);
+        @Nested
+        class Quando_criar_evento {
 
-        assertNotNull(resultado);
-        assertEquals("Reunião", resultado.getTitulo());
-        assertEquals(calendario, resultado.getCalendario());
-        verify(calendarioRepository).findById(calendarioId);
-        verify(eventoRepository).save(any(Evento.class));
-    }
+            @BeforeEach
+            void setup() {
+                when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
+                when(eventoRepository.save(any(Evento.class))).thenReturn(evento);
+            }
 
-    @Test
-    void deveLancarExcecaoAoCriarEventoComCalendarioInexistente() {
-        when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.empty());
+            @Test
+            void deve_criar_evento_com_sucesso() {
+                Evento resultado = eventoService.criar(evento, calendarioId);
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> eventoService.criar(evento, calendarioId)
-        );
-        assertEquals("Calendário não encontrado", exception.getMessage());
-    }
+                assertNotNull(resultado);
+                assertEquals("Reunião", resultado.getTitulo());
+                assertEquals(calendario, resultado.getCalendario());
+                verify(eventoRepository).save(any(Evento.class));
+            }
+        }
 
-    @Test
-    void deveLancarExcecaoAoCriarEventoComDataFimAnteriorADataInicio() {
-        evento.setDataFim(dataInicio.minusHours(1));
-        when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
+        @Nested
+        class Quando_criar_evento_com_calendario_inexistente {
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> eventoService.criar(evento, calendarioId)
-        );
-        assertEquals("Data de fim deve ser posterior à data de início", exception.getMessage());
-    }
+            @BeforeEach
+            void setup() {
+                when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.empty());
+            }
 
-    @Test
-    void deveLancarExcecaoAoCriarEventoComDatasNulas() {
-        evento.setDataInicio(null);
-        evento.setDataFim(null);
-        when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
+            @Test
+            void deve_lancar_excecao() {
+                IllegalArgumentException exception = assertThrows(
+                        IllegalArgumentException.class,
+                        () -> eventoService.criar(evento, calendarioId)
+                );
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> eventoService.criar(evento, calendarioId)
-        );
-        assertEquals("Datas de início e fim são obrigatórias", exception.getMessage());
-    }
+                assertEquals("Calendário não encontrado", exception.getMessage());
+            }
+        }
 
-    @Test
-    void deveBuscarEventoPorId() {
-        when(eventoRepository.findById(eventoId)).thenReturn(Optional.of(evento));
+        @Nested
+        class Quando_criar_evento_com_datas_invalidas {
 
-        Optional<Evento> resultado = eventoService.buscarPorId(eventoId);
+            @BeforeEach
+            void setup() {
+                when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
+            }
 
-        assertTrue(resultado.isPresent());
-        assertEquals("Reunião", resultado.get().getTitulo());
-    }
+            @Test
+            void deve_lancar_excecao_quando_data_fim_anterior() {
+                evento.setDataFim(dataInicio.minusHours(1));
 
-    @Test
-    void deveListarTodosEventos() {
-        List<Evento> eventos = Arrays.asList(evento, new Evento());
-        when(eventoRepository.findAll()).thenReturn(eventos);
+                IllegalArgumentException exception = assertThrows(
+                        IllegalArgumentException.class,
+                        () -> eventoService.criar(evento, calendarioId)
+                );
 
-        List<Evento> resultado = eventoService.listarTodos();
+                assertEquals("Data de fim deve ser posterior à data de início", exception.getMessage());
+            }
 
-        assertEquals(2, resultado.size());
-    }
+            @Test
+            void deve_lancar_excecao_quando_datas_nulas() {
+                evento.setDataInicio(null);
+                evento.setDataFim(null);
 
-    @Test
-    void deveListarEventosPorCalendario() {
-        List<Evento> eventos = Arrays.asList(evento);
-        when(eventoRepository.findByCalendarioId(calendarioId)).thenReturn(eventos);
+                IllegalArgumentException exception = assertThrows(
+                        IllegalArgumentException.class,
+                        () -> eventoService.criar(evento, calendarioId)
+                );
 
-        List<Evento> resultado = eventoService.listarPorCalendario(calendarioId);
+                assertEquals("Datas de início e fim são obrigatórias", exception.getMessage());
+            }
+        }
 
-        assertEquals(1, resultado.size());
-        assertEquals("Reunião", resultado.get(0).getTitulo());
-    }
+        @Nested
+        class Quando_buscar_evento_por_id {
 
-    @Test
-    void deveListarEventosPorCalendarioPaginado() {
-        Pageable pageable = PageRequest.of(0, 10);
-        Page<Evento> page = new PageImpl<>(Arrays.asList(evento));
-        when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
-        when(eventoRepository.findByCalendario(calendario, pageable)).thenReturn(page);
+            @Test
+            void deve_retornar_evento_quando_existir() {
+                when(eventoRepository.findById(eventoId)).thenReturn(Optional.of(evento));
 
-        Page<Evento> resultado = eventoService.listarPorCalendarioPaginado(calendarioId, pageable);
+                Optional<Evento> resultado = eventoService.buscarPorId(eventoId);
 
-        assertEquals(1, resultado.getTotalElements());
-    }
+                assertTrue(resultado.isPresent());
+                assertEquals("Reunião", resultado.get().getTitulo());
+            }
 
-    @Test
-    void deveBuscarEventosPorPeriodo() {
-        List<Evento> eventos = Arrays.asList(evento);
-        when(eventoRepository.findByDataInicioBetween(dataInicio, dataFim)).thenReturn(eventos);
+            @Test
+            void deve_retornar_vazio_quando_nao_existir() {
+                when(eventoRepository.findById(eventoId)).thenReturn(Optional.empty());
 
-        List<Evento> resultado = eventoService.buscarPorPeriodo(dataInicio, dataFim);
+                Optional<Evento> resultado = eventoService.buscarPorId(eventoId);
 
-        assertEquals(1, resultado.size());
-    }
+                assertFalse(resultado.isPresent());
+            }
+        }
 
-    @Test
-    void deveBuscarEventosPorCalendarioEPeriodo() {
-        List<Evento> eventos = Arrays.asList(evento);
-        when(eventoRepository.findByCalendarioAndDataBetween(calendarioId, dataInicio, dataFim))
-                .thenReturn(eventos);
+        @Nested
+        class Quando_listar_eventos {
 
-        List<Evento> resultado = eventoService.buscarPorCalendarioEPeriodo(calendarioId, dataInicio, dataFim);
+            @Test
+            void deve_listar_todos_eventos() {
+                List<Evento> eventos = Arrays.asList(evento, new Evento());
+                when(eventoRepository.findAll()).thenReturn(eventos);
 
-        assertEquals(1, resultado.size());
-    }
+                List<Evento> resultado = eventoService.listarTodos();
 
-    @Test
-    void deveBuscarEventosPorTitulo() {
-        Pageable pageable = PageRequest.of(0, 10);
-        Page<Evento> page = new PageImpl<>(Arrays.asList(evento));
-        when(eventoRepository.findByTituloContainingIgnoreCase("Reunião", pageable)).thenReturn(page);
+                assertEquals(2, resultado.size());
+            }
 
-        Page<Evento> resultado = eventoService.buscarPorTitulo("Reunião", pageable);
+            @Test
+            void deve_listar_eventos_por_calendario() {
+                List<Evento> eventos = Arrays.asList(evento);
+                when(eventoRepository.findByCalendarioId(calendarioId)).thenReturn(eventos);
 
-        assertEquals(1, resultado.getTotalElements());
-    }
+                List<Evento> resultado = eventoService.listarPorCalendario(calendarioId);
 
-    @Test
-    void deveListarEventosRecorrentes() {
-        evento.setRecorrente(true);
-        List<Evento> eventos = Arrays.asList(evento);
-        when(eventoRepository.findByRecorrente(true)).thenReturn(eventos);
+                assertEquals(1, resultado.size());
+                assertEquals("Reunião", resultado.get(0).getTitulo());
+            }
 
-        List<Evento> resultado = eventoService.listarRecorrentes();
+            @Test
+            void deve_listar_eventos_por_calendario_paginado() {
+                Pageable pageable = PageRequest.of(0, 10);
+                Page<Evento> page = new PageImpl<>(Arrays.asList(evento));
+                when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
+                when(eventoRepository.findByCalendario(calendario, pageable)).thenReturn(page);
 
-        assertEquals(1, resultado.size());
-        assertTrue(resultado.get(0).getRecorrente());
-    }
+                Page<Evento> resultado = eventoService.listarPorCalendarioPaginado(calendarioId, pageable);
 
-    @Test
-    void deveAtualizarEvento() {
-        Evento eventoAtualizado = new Evento();
-        eventoAtualizado.setTitulo("Reunião Updated");
-        eventoAtualizado.setDataInicio(dataInicio);
-        eventoAtualizado.setDataFim(dataFim);
+                assertEquals(1, resultado.getTotalElements());
+            }
 
-        when(eventoRepository.findById(eventoId)).thenReturn(Optional.of(evento));
-        when(eventoRepository.save(any(Evento.class))).thenReturn(evento);
+            @Test
+            void deve_listar_eventos_recorrentes() {
+                evento.setRecorrente(true);
+                List<Evento> eventos = Arrays.asList(evento);
+                when(eventoRepository.findByRecorrente(true)).thenReturn(eventos);
 
-        Evento resultado = eventoService.atualizar(eventoId, eventoAtualizado);
+                List<Evento> resultado = eventoService.listarRecorrentes();
 
-        assertNotNull(resultado);
-        verify(eventoRepository).save(any(Evento.class));
-    }
+                assertEquals(1, resultado.size());
+                assertTrue(resultado.get(0).getRecorrente());
+            }
+        }
 
-    @Test
-    void deveLancarExcecaoAoAtualizarEventoInexistente() {
-        when(eventoRepository.findById(eventoId)).thenReturn(Optional.empty());
+        @Nested
+        class Quando_buscar_eventos_por_periodo {
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> eventoService.atualizar(eventoId, evento)
-        );
-        assertEquals("Evento não encontrado", exception.getMessage());
-    }
+            @BeforeEach
+            void setup() {
+                List<Evento> eventos = Arrays.asList(evento);
+                when(eventoRepository.findByDataInicioBetween(dataInicio, dataFim)).thenReturn(eventos);
+            }
 
-    @Test
-    void deveDeletarEvento() {
-        when(eventoRepository.existsById(eventoId)).thenReturn(true);
-        doNothing().when(eventoRepository).deleteById(eventoId);
+            @Test
+            void deve_retornar_eventos_no_periodo() {
+                List<Evento> resultado = eventoService.buscarPorPeriodo(dataInicio, dataFim);
 
-        eventoService.deletar(eventoId);
+                assertEquals(1, resultado.size());
+            }
+        }
 
-        verify(eventoRepository).existsById(eventoId);
-        verify(eventoRepository).deleteById(eventoId);
-    }
+        @Nested
+        class Quando_buscar_eventos_por_calendario_e_periodo {
 
-    @Test
-    void deveLancarExcecaoAoDeletarEventoInexistente() {
-        when(eventoRepository.existsById(eventoId)).thenReturn(false);
+            @BeforeEach
+            void setup() {
+                List<Evento> eventos = Arrays.asList(evento);
+                when(eventoRepository.findByCalendarioAndDataBetween(calendarioId, dataInicio, dataFim))
+                        .thenReturn(eventos);
+            }
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> eventoService.deletar(eventoId)
-        );
-        assertEquals("Evento não encontrado", exception.getMessage());
-    }
+            @Test
+            void deve_retornar_eventos_encontrados() {
+                List<Evento> resultado = eventoService.buscarPorCalendarioEPeriodo(calendarioId, dataInicio, dataFim);
 
-    @Test
-    void deveContarEventosPorCalendario() {
-        List<Evento> eventos = Arrays.asList(evento, new Evento(), new Evento());
-        when(eventoRepository.findByCalendarioId(calendarioId)).thenReturn(eventos);
+                assertEquals(1, resultado.size());
+            }
+        }
 
-        long resultado = eventoService.contarPorCalendario(calendarioId);
+        @Nested
+        class Quando_buscar_eventos_por_titulo {
 
-        assertEquals(3, resultado);
-    }
+            @BeforeEach
+            void setup() {
+                Pageable pageable = PageRequest.of(0, 10);
+                Page<Evento> page = new PageImpl<>(Arrays.asList(evento));
+                when(eventoRepository.findByTituloContainingIgnoreCase("Reunião", pageable)).thenReturn(page);
+            }
 
-    @Test
-    void deveVerificarSeEventoPertenceAoCalendario() {
-        when(eventoRepository.findById(eventoId)).thenReturn(Optional.of(evento));
+            @Test
+            void deve_retornar_eventos_encontrados() {
+                Pageable pageable = PageRequest.of(0, 10);
+                Page<Evento> resultado = eventoService.buscarPorTitulo("Reunião", pageable);
 
-        boolean resultado = eventoService.pertenceAoCalendario(eventoId, calendarioId);
+                assertEquals(1, resultado.getTotalElements());
+            }
+        }
 
-        assertTrue(resultado);
-    }
+        @Nested
+        class Quando_atualizar_evento {
 
-    @Test
-    void deveRetornarFalsoQuandoEventoNaoPertenceAoCalendario() {
-        UUID outroCalendarioId = UUID.randomUUID();
-        when(eventoRepository.findById(eventoId)).thenReturn(Optional.of(evento));
+            Evento eventoAtualizado;
 
-        boolean resultado = eventoService.pertenceAoCalendario(eventoId, outroCalendarioId);
+            @BeforeEach
+            void setup() {
+                eventoAtualizado = new Evento();
+                eventoAtualizado.setTitulo("Reunião Updated");
+                eventoAtualizado.setDataInicio(dataInicio);
+                eventoAtualizado.setDataFim(dataFim);
 
-        assertFalse(resultado);
+                when(eventoRepository.findById(eventoId)).thenReturn(Optional.of(evento));
+                when(eventoRepository.save(any(Evento.class))).thenReturn(evento);
+            }
+
+            @Test
+            void deve_atualizar_evento_com_sucesso() {
+                Evento resultado = eventoService.atualizar(eventoId, eventoAtualizado);
+
+                assertNotNull(resultado);
+                verify(eventoRepository).save(any(Evento.class));
+            }
+        }
+
+        @Nested
+        class Quando_atualizar_evento_inexistente {
+
+            @BeforeEach
+            void setup() {
+                when(eventoRepository.findById(eventoId)).thenReturn(Optional.empty());
+            }
+
+            @Test
+            void deve_lancar_excecao() {
+                IllegalArgumentException exception = assertThrows(
+                        IllegalArgumentException.class,
+                        () -> eventoService.atualizar(eventoId, evento)
+                );
+
+                assertEquals("Evento não encontrado", exception.getMessage());
+            }
+        }
+
+        @Nested
+        class Quando_deletar_evento {
+
+            @Test
+            void deve_deletar_evento_existente() {
+                when(eventoRepository.existsById(eventoId)).thenReturn(true);
+                doNothing().when(eventoRepository).deleteById(eventoId);
+
+                eventoService.deletar(eventoId);
+
+                verify(eventoRepository).existsById(eventoId);
+                verify(eventoRepository).deleteById(eventoId);
+            }
+
+            @Test
+            void deve_lancar_excecao_quando_evento_nao_existe() {
+                when(eventoRepository.existsById(eventoId)).thenReturn(false);
+
+                IllegalArgumentException exception = assertThrows(
+                        IllegalArgumentException.class,
+                        () -> eventoService.deletar(eventoId)
+                );
+
+                assertEquals("Evento não encontrado", exception.getMessage());
+            }
+        }
+
+        @Nested
+        class Quando_contar_eventos_por_calendario {
+
+            @BeforeEach
+            void setup() {
+                List<Evento> eventos = Arrays.asList(evento, new Evento(), new Evento());
+                when(eventoRepository.findByCalendarioId(calendarioId)).thenReturn(eventos);
+            }
+
+            @Test
+            void deve_retornar_quantidade_correta() {
+                long resultado = eventoService.contarPorCalendario(calendarioId);
+
+                assertEquals(3, resultado);
+            }
+        }
+
+        @Nested
+        class Quando_verificar_pertencimento_ao_calendario {
+
+            @BeforeEach
+            void setup() {
+                when(eventoRepository.findById(eventoId)).thenReturn(Optional.of(evento));
+            }
+
+            @Test
+            void deve_retornar_true_quando_pertence() {
+                boolean resultado = eventoService.pertenceAoCalendario(eventoId, calendarioId);
+
+                assertTrue(resultado);
+            }
+
+            @Test
+            void deve_retornar_false_quando_nao_pertence() {
+                UUID outroCalendarioId = UUID.randomUUID();
+
+                boolean resultado = eventoService.pertenceAoCalendario(eventoId, outroCalendarioId);
+
+                assertFalse(resultado);
+            }
+        }
     }
 }

@@ -1,7 +1,6 @@
 package projeto.collendar.service;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -21,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+@DisplayNameGeneration(DisplayNameGenerator.ReplaceUnderscores.class)
 @ExtendWith(MockitoExtension.class)
 class CalendarioServiceTest {
 
@@ -33,186 +33,263 @@ class CalendarioServiceTest {
     @InjectMocks
     private CalendarioService calendarioService;
 
-    private Calendario calendario;
-    private Usuario usuario;
-    private UUID calendarioId;
-    private UUID usuarioId;
+    @Nested
+    class Dado_um_calendario_valido {
 
-    @BeforeEach
-    void setUp() {
-        calendarioId = UUID.randomUUID();
-        usuarioId = UUID.randomUUID();
+        Calendario calendario;
+        Usuario usuario;
+        UUID calendarioId;
+        UUID usuarioId;
 
-        usuario = new Usuario();
-        usuario.setId(usuarioId);
-        usuario.setNome("João Silva");
-        usuario.setEmail("joao@email.com");
+        @BeforeEach
+        void setup() {
+            calendarioId = UUID.randomUUID();
+            usuarioId = UUID.randomUUID();
 
-        calendario = new Calendario();
-        calendario.setId(calendarioId);
-        calendario.setNome("Trabalho");
-        calendario.setDescricao("Calendário de trabalho");
-        calendario.setCor("#FF5733");
-        calendario.setUsuario(usuario);
-    }
+            usuario = new Usuario();
+            usuario.setId(usuarioId);
+            usuario.setNome("João Silva");
 
-    @Test
-    void deveCriarCalendarioComSucesso() {
-        when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
-        when(calendarioRepository.save(any(Calendario.class))).thenReturn(calendario);
+            calendario = new Calendario();
+            calendario.setId(calendarioId);
+            calendario.setNome("Trabalho");
+            calendario.setDescricao("Calendário de trabalho");
+            calendario.setCor("#FF5733");
+            calendario.setUsuario(usuario);
+        }
 
-        Calendario resultado = calendarioService.criar(calendario, usuarioId);
+        @Nested
+        class Quando_criar_calendario {
 
-        assertNotNull(resultado);
-        assertEquals("Trabalho", resultado.getNome());
-        assertEquals(usuario, resultado.getUsuario());
-        verify(usuarioRepository).findById(usuarioId);
-        verify(calendarioRepository).save(any(Calendario.class));
-    }
+            @BeforeEach
+            void setup() {
+                when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
+                when(calendarioRepository.save(any(Calendario.class))).thenReturn(calendario);
+            }
 
-    @Test
-    void deveLancarExcecaoAoCriarCalendarioComUsuarioInexistente() {
-        when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.empty());
+            @Test
+            void deve_criar_calendario_com_sucesso() {
+                Calendario resultado = calendarioService.criar(calendario, usuarioId);
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> calendarioService.criar(calendario, usuarioId)
-        );
-        assertEquals("Usuário não encontrado", exception.getMessage());
-        verify(calendarioRepository, never()).save(any());
-    }
+                assertNotNull(resultado);
+                assertEquals("Trabalho", resultado.getNome());
+                assertEquals(usuario, resultado.getUsuario());
+                verify(calendarioRepository).save(any(Calendario.class));
+            }
+        }
 
-    @Test
-    void deveBuscarCalendarioPorId() {
-        when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
+        @Nested
+        class Quando_criar_calendario_com_usuario_inexistente {
 
-        Optional<Calendario> resultado = calendarioService.buscarPorId(calendarioId);
+            @BeforeEach
+            void setup() {
+                when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.empty());
+            }
 
-        assertTrue(resultado.isPresent());
-        assertEquals("Trabalho", resultado.get().getNome());
-    }
+            @Test
+            void deve_lancar_excecao() {
+                IllegalArgumentException exception = assertThrows(
+                        IllegalArgumentException.class,
+                        () -> calendarioService.criar(calendario, usuarioId)
+                );
 
-    @Test
-    void deveListarTodosCalendarios() {
-        List<Calendario> calendarios = Arrays.asList(calendario, new Calendario());
-        when(calendarioRepository.findAll()).thenReturn(calendarios);
+                assertEquals("Usuário não encontrado", exception.getMessage());
+                verify(calendarioRepository, never()).save(any());
+            }
+        }
 
-        List<Calendario> resultado = calendarioService.listarTodos();
+        @Nested
+        class Quando_buscar_calendario_por_id {
 
-        assertEquals(2, resultado.size());
-        verify(calendarioRepository).findAll();
-    }
+            @Test
+            void deve_retornar_calendario_quando_existir() {
+                when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
 
-    @Test
-    void deveListarCalendariosPorUsuario() {
-        List<Calendario> calendarios = Arrays.asList(calendario);
-        when(calendarioRepository.findByUsuarioId(usuarioId)).thenReturn(calendarios);
+                Optional<Calendario> resultado = calendarioService.buscarPorId(calendarioId);
 
-        List<Calendario> resultado = calendarioService.listarPorUsuario(usuarioId);
+                assertTrue(resultado.isPresent());
+                assertEquals("Trabalho", resultado.get().getNome());
+            }
 
-        assertEquals(1, resultado.size());
-        assertEquals("Trabalho", resultado.get(0).getNome());
-    }
+            @Test
+            void deve_retornar_vazio_quando_nao_existir() {
+                when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.empty());
 
-    @Test
-    void deveListarCalendariosPorUsuarioPaginado() {
-        Pageable pageable = PageRequest.of(0, 10);
-        Page<Calendario> page = new PageImpl<>(Arrays.asList(calendario));
-        when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
-        when(calendarioRepository.findByUsuario(usuario, pageable)).thenReturn(page);
+                Optional<Calendario> resultado = calendarioService.buscarPorId(calendarioId);
 
-        Page<Calendario> resultado = calendarioService.listarPorUsuarioPaginado(usuarioId, pageable);
+                assertFalse(resultado.isPresent());
+            }
+        }
 
-        assertEquals(1, resultado.getTotalElements());
-        assertEquals("Trabalho", resultado.getContent().get(0).getNome());
-    }
+        @Nested
+        class Quando_listar_calendarios {
 
-    @Test
-    void deveBuscarCalendariosPorNome() {
-        Pageable pageable = PageRequest.of(0, 10);
-        Page<Calendario> page = new PageImpl<>(Arrays.asList(calendario));
-        when(calendarioRepository.findByNomeContainingIgnoreCase("Trabalho", pageable)).thenReturn(page);
+            @Test
+            void deve_listar_todos_calendarios() {
+                List<Calendario> calendarios = Arrays.asList(calendario, new Calendario());
+                when(calendarioRepository.findAll()).thenReturn(calendarios);
 
-        Page<Calendario> resultado = calendarioService.buscarPorNome("Trabalho", pageable);
+                List<Calendario> resultado = calendarioService.listarTodos();
 
-        assertEquals(1, resultado.getTotalElements());
-    }
+                assertEquals(2, resultado.size());
+                verify(calendarioRepository).findAll();
+            }
 
-    @Test
-    void deveAtualizarCalendario() {
-        Calendario calendarioAtualizado = new Calendario();
-        calendarioAtualizado.setNome("Trabalho Updated");
-        calendarioAtualizado.setDescricao("Nova descrição");
-        calendarioAtualizado.setCor("#00FF00");
+            @Test
+            void deve_listar_calendarios_por_usuario() {
+                List<Calendario> calendarios = Arrays.asList(calendario);
+                when(calendarioRepository.findByUsuarioId(usuarioId)).thenReturn(calendarios);
 
-        when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
-        when(calendarioRepository.save(any(Calendario.class))).thenReturn(calendario);
+                List<Calendario> resultado = calendarioService.listarPorUsuario(usuarioId);
 
-        Calendario resultado = calendarioService.atualizar(calendarioId, calendarioAtualizado);
+                assertEquals(1, resultado.size());
+                assertEquals("Trabalho", resultado.get(0).getNome());
+            }
 
-        assertNotNull(resultado);
-        verify(calendarioRepository).save(any(Calendario.class));
-    }
+            @Test
+            void deve_listar_calendarios_por_usuario_paginado() {
+                Pageable pageable = PageRequest.of(0, 10);
+                Page<Calendario> page = new PageImpl<>(Arrays.asList(calendario));
+                when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
+                when(calendarioRepository.findByUsuario(usuario, pageable)).thenReturn(page);
 
-    @Test
-    void deveLancarExcecaoAoAtualizarCalendarioInexistente() {
-        when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.empty());
+                Page<Calendario> resultado = calendarioService.listarPorUsuarioPaginado(usuarioId, pageable);
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> calendarioService.atualizar(calendarioId, calendario)
-        );
-        assertEquals("Calendário não encontrado", exception.getMessage());
-    }
+                assertEquals(1, resultado.getTotalElements());
+                assertEquals("Trabalho", resultado.getContent().get(0).getNome());
+            }
+        }
 
-    @Test
-    void deveDeletarCalendario() {
-        when(calendarioRepository.existsById(calendarioId)).thenReturn(true);
-        doNothing().when(calendarioRepository).deleteById(calendarioId);
+        @Nested
+        class Quando_buscar_calendarios_por_nome {
 
-        calendarioService.deletar(calendarioId);
+            @BeforeEach
+            void setup() {
+                Pageable pageable = PageRequest.of(0, 10);
+                Page<Calendario> page = new PageImpl<>(Arrays.asList(calendario));
+                when(calendarioRepository.findByNomeContainingIgnoreCase("Trabalho", pageable)).thenReturn(page);
+            }
 
-        verify(calendarioRepository).existsById(calendarioId);
-        verify(calendarioRepository).deleteById(calendarioId);
-    }
+            @Test
+            void deve_retornar_calendarios_encontrados() {
+                Pageable pageable = PageRequest.of(0, 10);
+                Page<Calendario> resultado = calendarioService.buscarPorNome("Trabalho", pageable);
 
-    @Test
-    void deveLancarExcecaoAoDeletarCalendarioInexistente() {
-        when(calendarioRepository.existsById(calendarioId)).thenReturn(false);
+                assertEquals(1, resultado.getTotalElements());
+            }
+        }
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> calendarioService.deletar(calendarioId)
-        );
-        assertEquals("Calendário não encontrado", exception.getMessage());
-    }
+        @Nested
+        class Quando_atualizar_calendario {
 
-    @Test
-    void deveVerificarSeUsuarioEhProprietario() {
-        when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
+            Calendario calendarioAtualizado;
 
-        boolean resultado = calendarioService.verificarProprietario(calendarioId, usuarioId);
+            @BeforeEach
+            void setup() {
+                calendarioAtualizado = new Calendario();
+                calendarioAtualizado.setNome("Trabalho Updated");
+                calendarioAtualizado.setDescricao("Nova descrição");
+                calendarioAtualizado.setCor("#00FF00");
 
-        assertTrue(resultado);
-    }
+                when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
+                when(calendarioRepository.save(any(Calendario.class))).thenReturn(calendario);
+            }
 
-    @Test
-    void deveRetornarFalsoQuandoUsuarioNaoEhProprietario() {
-        UUID outroUsuarioId = UUID.randomUUID();
-        when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
+            @Test
+            void deve_atualizar_calendario_com_sucesso() {
+                Calendario resultado = calendarioService.atualizar(calendarioId, calendarioAtualizado);
 
-        boolean resultado = calendarioService.verificarProprietario(calendarioId, outroUsuarioId);
+                assertNotNull(resultado);
+                verify(calendarioRepository).save(any(Calendario.class));
+            }
+        }
 
-        assertFalse(resultado);
-    }
+        @Nested
+        class Quando_atualizar_calendario_inexistente {
 
-    @Test
-    void deveContarCalendariosPorUsuario() {
-        List<Calendario> calendarios = Arrays.asList(calendario, new Calendario());
-        when(calendarioRepository.findByUsuarioId(usuarioId)).thenReturn(calendarios);
+            @BeforeEach
+            void setup() {
+                when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.empty());
+            }
 
-        long resultado = calendarioService.contarPorUsuario(usuarioId);
+            @Test
+            void deve_lancar_excecao() {
+                IllegalArgumentException exception = assertThrows(
+                        IllegalArgumentException.class,
+                        () -> calendarioService.atualizar(calendarioId, calendario)
+                );
 
-        assertEquals(2, resultado);
+                assertEquals("Calendário não encontrado", exception.getMessage());
+            }
+        }
+
+        @Nested
+        class Quando_deletar_calendario {
+
+            @Test
+            void deve_deletar_calendario_existente() {
+                when(calendarioRepository.existsById(calendarioId)).thenReturn(true);
+                doNothing().when(calendarioRepository).deleteById(calendarioId);
+
+                calendarioService.deletar(calendarioId);
+
+                verify(calendarioRepository).existsById(calendarioId);
+                verify(calendarioRepository).deleteById(calendarioId);
+            }
+
+            @Test
+            void deve_lancar_excecao_quando_calendario_nao_existe() {
+                when(calendarioRepository.existsById(calendarioId)).thenReturn(false);
+
+                IllegalArgumentException exception = assertThrows(
+                        IllegalArgumentException.class,
+                        () -> calendarioService.deletar(calendarioId)
+                );
+
+                assertEquals("Calendário não encontrado", exception.getMessage());
+            }
+        }
+
+        @Nested
+        class Quando_verificar_proprietario {
+
+            @BeforeEach
+            void setup() {
+                when(calendarioRepository.findById(calendarioId)).thenReturn(Optional.of(calendario));
+            }
+
+            @Test
+            void deve_retornar_true_quando_usuario_eh_proprietario() {
+                boolean resultado = calendarioService.verificarProprietario(calendarioId, usuarioId);
+
+                assertTrue(resultado);
+            }
+
+            @Test
+            void deve_retornar_false_quando_usuario_nao_eh_proprietario() {
+                UUID outroUsuarioId = UUID.randomUUID();
+
+                boolean resultado = calendarioService.verificarProprietario(calendarioId, outroUsuarioId);
+
+                assertFalse(resultado);
+            }
+        }
+
+        @Nested
+        class Quando_contar_calendarios_por_usuario {
+
+            @BeforeEach
+            void setup() {
+                List<Calendario> calendarios = Arrays.asList(calendario, new Calendario());
+                when(calendarioRepository.findByUsuarioId(usuarioId)).thenReturn(calendarios);
+            }
+
+            @Test
+            void deve_retornar_quantidade_correta() {
+                long resultado = calendarioService.contarPorUsuario(usuarioId);
+
+                assertEquals(2, resultado);
+            }
+        }
     }
 }
