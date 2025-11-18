@@ -134,6 +134,19 @@ public class UsuarioController {
         }
     }
 
+    @PatchMapping("/{id}/roles")
+    @Operation(summary = "Adicionar role ao usuário")
+    public ResponseEntity<UsuarioDTO> adicionarRole(
+            @PathVariable UUID id,
+            @RequestParam String role) {
+        try {
+            Usuario usuario = usuarioService.adicionarRole(id, role);
+            return ResponseEntity.ok(toDTO(usuario));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
     private UsuarioDTO toDTO(Usuario usuario) {
         UsuarioDTO dto = new UsuarioDTO();
         dto.setId(usuario.getId());
