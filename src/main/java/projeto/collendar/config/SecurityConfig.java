@@ -69,18 +69,18 @@ public class SecurityConfig {
 
     @Bean
     public UserDetailsService userDetailsService() {
-        return login -> usuarioRepository.findByLogin(login)
+        return email -> usuarioRepository.findByEmail(email)
                 .map(usuario -> {
                     List<GrantedAuthority> authorities = usuario.getRoles().stream()
                             .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getNome()))
                             .collect(Collectors.toList());
                     return new org.springframework.security.core.userdetails.User(
-                            usuario.getLogin(),
+                            usuario.getEmail(),
                             usuario.getSenha(),
                             authorities
                     );
                 })
-                .orElseThrow(() -> new UsernameNotFoundException("Usuário não encontrado: " + login));
+                .orElseThrow(() -> new UsernameNotFoundException("Usuário não encontrado: " + email));
     }
 
     @Bean
