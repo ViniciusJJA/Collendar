@@ -20,9 +20,7 @@ public class UsuarioService {
 
     private final UsuarioRepository usuarioRepository;
     private final RoleRepository roleRepository;
-
-    @Autowired
-    private PasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
 
     @Transactional
     public Usuario criar(Usuario usuario) {
