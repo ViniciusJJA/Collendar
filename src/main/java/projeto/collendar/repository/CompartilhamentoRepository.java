@@ -5,6 +5,7 @@ import projeto.collendar.model.Calendario;
 import projeto.collendar.model.Compartilhamento;
 import projeto.collendar.model.Usuario;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -30,7 +31,10 @@ public interface CompartilhamentoRepository extends JpaRepository<Compartilhamen
 
     boolean existsByCalendarioAndUsuario(Calendario calendario, Usuario usuario);
 
+    @Query("SELECT c.calendario FROM Compartilhamento c WHERE c.usuario.id = :usuarioId")
     List<Calendario> findCalendariosCompartilhadosComUsuario(@Param("usuarioId") UUID usuarioId);
 
-    void deleteByCalendarioIdAndUsuarioId(UUID calendarioId, UUID usuarioId);
+    @Modifying
+    @Query("DELETE FROM Compartilhamento c WHERE c.calendario.id = :calendarioId AND c.usuario.id = :usuarioId")
+    void deleteByCalendarioIdAndUsuarioId(@Param("calendarioId") UUID calendarioId, @Param("usuarioId") UUID usuarioId);
 }

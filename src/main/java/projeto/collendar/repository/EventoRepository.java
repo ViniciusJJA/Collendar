@@ -25,6 +25,8 @@ public interface EventoRepository extends JpaRepository<Evento, UUID>, JpaSpecif
 
     List<Evento> findByDataInicioBetween(LocalDateTime dataInicio, LocalDateTime dataFim);
 
+    @Query("SELECT e FROM Evento e WHERE e.calendario.id = :calendarioId " +
+            "AND e.dataInicio BETWEEN :dataInicio AND :dataFim")
     List<Evento> findByCalendarioAndDataBetween(
             @Param("calendarioId") UUID calendarioId,
             @Param("dataInicio") LocalDateTime dataInicio,
