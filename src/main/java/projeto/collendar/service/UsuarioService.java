@@ -1,6 +1,8 @@
 package projeto.collendar.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import projeto.collendar.model.Role;
@@ -19,11 +21,16 @@ public class UsuarioService {
     private final UsuarioRepository usuarioRepository;
     private final RoleRepository roleRepository;
 
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     @Transactional
     public Usuario criar(Usuario usuario) {
         if (usuarioRepository.existsByEmail(usuario.getEmail())) {
             throw new IllegalArgumentException("Email já cadastrado");
         }
+
+        usuario.setSenha(passwordEncoder.encode(usuario.getSenha()));
         Role roleUser = roleRepository.findByNome("ROLE_USER")
                 .orElseThrow(() -> new RuntimeException("Role ROLE_USER não encontrada"));
         usuario.getRoles().add(roleUser);
@@ -111,4 +118,3 @@ public class UsuarioService {
         return usuarioRepository.existsByEmail(email);
     }
 }
-//comentario

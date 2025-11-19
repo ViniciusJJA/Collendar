@@ -30,6 +30,7 @@ public interface CompartilhamentoRepository extends JpaRepository<Compartilhamen
 
     boolean existsByCalendarioAndUsuario(Calendario calendario, Usuario usuario);
 
+    @Query("SELECT c.calendario FROM Compartilhamento c WHERE c.usuario.id = :usuarioId")
     List<Calendario> findCalendariosCompartilhadosComUsuario(@Param("usuarioId") UUID usuarioId);
 
     void deleteByCalendarioIdAndUsuarioId(UUID calendarioId, UUID usuarioId);

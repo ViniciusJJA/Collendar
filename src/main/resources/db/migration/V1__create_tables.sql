@@ -1,8 +1,6 @@
 CREATE TABLE roles (
-
 id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
 nome VARCHAR(50) UNIQUE NOT NULL
-
 );
 
 CREATE TABLE usuarios (

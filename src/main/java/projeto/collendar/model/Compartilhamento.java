@@ -29,4 +29,9 @@ public class Compartilhamento {
     private TipoPermissao permissao;
 
     private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+    }
 }
