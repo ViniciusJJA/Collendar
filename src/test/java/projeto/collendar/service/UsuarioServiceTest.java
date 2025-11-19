@@ -5,6 +5,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import projeto.collendar.model.Role;
 import projeto.collendar.model.Usuario;
 import projeto.collendar.repository.RoleRepository;
@@ -26,6 +27,9 @@ class UsuarioServiceTest {
     @Mock
     private RoleRepository roleRepository;
 
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
     @InjectMocks
     private UsuarioService usuarioService;
 
@@ -41,7 +45,6 @@ class UsuarioServiceTest {
             usuarioId = UUID.randomUUID();
 
             roleUser = new Role();
-            roleUser.setId(UUID.randomUUID());
             roleUser.setNome("ROLE_USER");
 
             usuario = new Usuario();
@@ -59,6 +62,7 @@ class UsuarioServiceTest {
             @BeforeEach
             void setup() {
                 when(usuarioRepository.existsByEmail(usuario.getEmail())).thenReturn(false);
+                when(passwordEncoder.encode(anyString())).thenReturn("senhaEncriptada");
                 when(roleRepository.findByNome("ROLE_USER")).thenReturn(Optional.of(roleUser));
                 when(usuarioRepository.save(any(Usuario.class))).thenReturn(usuario);
             }
@@ -71,6 +75,7 @@ class UsuarioServiceTest {
                 assertEquals("João Silva", resultado.getNome());
                 assertEquals("joao@email.com", resultado.getEmail());
                 verify(usuarioRepository).save(any(Usuario.class));
+                verify(passwordEncoder).encode(anyString());
             }
 
             @Test
@@ -108,6 +113,7 @@ class UsuarioServiceTest {
             @BeforeEach
             void setup() {
                 when(usuarioRepository.existsByEmail(usuario.getEmail())).thenReturn(false);
+                when(passwordEncoder.encode(anyString())).thenReturn("senhaEncriptada");
                 when(roleRepository.findByNome("ROLE_USER")).thenReturn(Optional.empty());
             }
 
@@ -210,11 +216,12 @@ class UsuarioServiceTest {
 
             @Test
             void nao_deve_alterar_senha_quando_vazia() {
+                String senhaOriginal = usuario.getSenha();
                 usuarioAtualizado.setSenha("");
 
-                Usuario resultado = usuarioService.atualizar(usuarioId, usuarioAtualizado);
+                usuarioService.atualizar(usuarioId, usuarioAtualizado);
 
-                assertEquals("senha123", usuario.getSenha());
+                assertEquals(senhaOriginal, usuario.getSenha());
             }
         }
 
@@ -312,8 +319,11 @@ class UsuarioServiceTest {
 
             @Test
             void deve_adicionar_role_ao_usuario() {
+                Role roleAdmin = new Role();
+                roleAdmin.setNome("ROLE_ADMIN");
+
                 when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
-                when(roleRepository.findByNome("ROLE_ADMIN")).thenReturn(Optional.of(roleUser));
+                when(roleRepository.findByNome("ROLE_ADMIN")).thenReturn(Optional.of(roleAdmin));
                 when(usuarioRepository.save(any(Usuario.class))).thenReturn(usuario);
 
                 Usuario resultado = usuarioService.adicionarRole(usuarioId, "ROLE_ADMIN");
