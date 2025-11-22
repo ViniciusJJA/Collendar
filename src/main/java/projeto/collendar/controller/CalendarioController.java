@@ -32,7 +32,7 @@ public class CalendarioController {
             description = "Cria um novo calendário associado a um usuário",
             responses = {
                     @ApiResponse(responseCode = "201", description = "Calendário criado com sucesso"),
-                    @ApiResponse(responseCode = "400", description = "Dados inválidos ou usuário não encontrado")
+                    @ApiResponse(responseCode = "404", description = "Usuário não encontrado")
             }
     )
     public ResponseEntity<CalendarioDTO> criar(
@@ -43,7 +43,7 @@ public class CalendarioController {
             Calendario novoCalendario = calendarioService.criar(calendario, usuarioId);
             return ResponseEntity.status(HttpStatus.CREATED).body(toDTO(novoCalendario));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.notFound().build();
         }
     }
 
@@ -104,7 +104,7 @@ public class CalendarioController {
             description = "Retorna calendários do usuário com paginação",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Página retornada com sucesso"),
-                    @ApiResponse(responseCode = "400", description = "Usuário não encontrado")
+                    @ApiResponse(responseCode = "404", description = "Usuário não encontrado")
             }
     )
     public ResponseEntity<Page<CalendarioDTO>> listarPorUsuarioPaginado(
@@ -117,7 +117,7 @@ public class CalendarioController {
                     .map(this::toDTO);
             return ResponseEntity.ok(calendarios);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.notFound().build();
         }
     }
 
@@ -140,7 +140,6 @@ public class CalendarioController {
             description = "Atualiza os dados de um calendário existente",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Calendário atualizado com sucesso"),
-                    @ApiResponse(responseCode = "400", description = "Dados inválidos"),
                     @ApiResponse(responseCode = "404", description = "Calendário não encontrado")})
     public ResponseEntity<CalendarioDTO> atualizar(
             @Parameter(description = "ID do calendário", required = true)
@@ -150,7 +149,7 @@ public class CalendarioController {
             Calendario calendarioAtualizado = calendarioService.atualizar(id, calendario);
             return ResponseEntity.ok(toDTO(calendarioAtualizado));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.notFound().build();
         }
     }
 
@@ -176,7 +175,7 @@ public class CalendarioController {
             description = "Verifica se um usuário é o proprietário de um calendário",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Verificação realizada"),
-                    @ApiResponse(responseCode = "400", description = "Calendário não encontrado")})
+                    @ApiResponse(responseCode = "404", description = "Calendário não encontrado")})
     public ResponseEntity<Boolean> verificarProprietario(
             @Parameter(description = "ID do calendário", required = true)
             @PathVariable UUID calendarioId,
@@ -186,7 +185,7 @@ public class CalendarioController {
             boolean ehProprietario = calendarioService.verificarProprietario(calendarioId, usuarioId);
             return ResponseEntity.ok(ehProprietario);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.notFound().build();
         }
     }
 
