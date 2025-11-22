@@ -27,10 +27,11 @@ public class UsuarioService {
         if (usuarioRepository.existsByEmail(usuario.getEmail())) {
             throw new IllegalArgumentException("Email já cadastrado");
         }
-
         usuario.setSenha(passwordEncoder.encode(usuario.getSenha()));
-        Role roleUser = roleRepository.findByNome("ROLE_USER")
-                .orElseThrow(() -> new RuntimeException("Role ROLE_USER não encontrada"));
+
+        Role roleUser = roleRepository.findByNome("USER")
+                .orElseThrow(() -> new RuntimeException("Role USER não encontrada"));
+
         usuario.getRoles().add(roleUser);
 
         return usuarioRepository.save(usuario);
