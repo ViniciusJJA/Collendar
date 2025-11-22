@@ -19,7 +19,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/calendarios")
+@RequestMapping("/calendarios")
 @RequiredArgsConstructor
 @Tag(name = "Calendários", description = "Gerenciamento de calendários")
 public class CalendarioController {

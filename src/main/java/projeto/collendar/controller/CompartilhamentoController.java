@@ -20,7 +20,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/compartilhamentos")
+@RequestMapping("/compartilhamentos")
 @RequiredArgsConstructor
 @Tag(name = "Compartilhamentos", description = "Gerenciamento de compartilhamento de calendários entre usuários")
 public class CompartilhamentoController {
