@@ -37,24 +37,16 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtAuthFilter) throws Exception {
         http
+                .cors(cors -> {})  // ⬅️ Ativa CORS e usa sua CorsConfig
                 .csrf(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-
-                        .requestMatchers(
-                                "/v3/api-docs/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html"
-                        ).permitAll()
-
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/usuarios/first-access").permitAll()
                         .requestMatchers("/usuarios/reset-password").permitAll()
                         .requestMatchers("/usuarios/has-registered-user").permitAll()
-
 
                         .requestMatchers(HttpMethod.POST, "/usuarios").permitAll()
                         .requestMatchers(HttpMethod.DELETE, "/usuarios/**").hasRole("ADMIN")
