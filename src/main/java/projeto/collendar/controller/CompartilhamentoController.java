@@ -33,7 +33,8 @@ public class CompartilhamentoController {
             description = "Compartilha um calendário com outro usuário definindo o tipo de permissão (VISUALIZAR ou EDITAR)",
             responses = {
                     @ApiResponse(responseCode = "201", description = "Calendário compartilhado com sucesso"),
-                    @ApiResponse(responseCode = "400", description = "Dados inválidos, calendário já compartilhado ou tentativa de compartilhar consigo mesmo")
+                    @ApiResponse(responseCode = "400", description = "Calendário já compartilhado ou tentativa de compartilhar consigo mesmo"),
+                    @ApiResponse(responseCode = "404", description = "Calendário ou usuário não encontrado")
             }
     )
     public ResponseEntity<CompartilhamentoDTO> compartilhar(
@@ -47,6 +48,10 @@ public class CompartilhamentoController {
             Compartilhamento compartilhamento = compartilhamentoService.compartilhar(calendarioId, usuarioId, permissao);
             return ResponseEntity.status(HttpStatus.CREATED).body(toDTO(compartilhamento));
         } catch (IllegalArgumentException e) {
+            // Se a mensagem contém "não encontrado", retorna 404, senão 400
+            if (e.getMessage().toLowerCase().contains("não encontrado")) {
+                return ResponseEntity.notFound().build();
+            }
             return ResponseEntity.badRequest().build();
         }
     }
@@ -128,8 +133,7 @@ public class CompartilhamentoController {
             description = "Busca o compartilhamento de um calendário com um usuário específico",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Compartilhamento encontrado"),
-                    @ApiResponse(responseCode = "404", description = "Compartilhamento não encontrado"),
-                    @ApiResponse(responseCode = "400", description = "Calendário ou usuário não encontrado")
+                    @ApiResponse(responseCode = "404", description = "Compartilhamento, calendário ou usuário não encontrado")
             }
     )
     public ResponseEntity<CompartilhamentoDTO> buscarCompartilhamento(
@@ -142,7 +146,7 @@ public class CompartilhamentoController {
                     .map(compartilhamento -> ResponseEntity.ok(toDTO(compartilhamento)))
                     .orElse(ResponseEntity.notFound().build());
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.notFound().build();
         }
     }
 
@@ -152,7 +156,7 @@ public class CompartilhamentoController {
             description = "Altera o tipo de permissão de um compartilhamento existente",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Permissão atualizada com sucesso"),
-                    @ApiResponse(responseCode = "400", description = "Compartilhamento não encontrado")
+                    @ApiResponse(responseCode = "404", description = "Compartilhamento não encontrado")
             }
     )
     public ResponseEntity<CompartilhamentoDTO> atualizarPermissao(
@@ -164,7 +168,7 @@ public class CompartilhamentoController {
             Compartilhamento compartilhamento = compartilhamentoService.atualizarPermissao(id, permissao);
             return ResponseEntity.ok(toDTO(compartilhamento));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.notFound().build();
         }
     }
 
@@ -211,7 +215,7 @@ public class CompartilhamentoController {
             description = "Verifica se um usuário tem acesso a um calendário (proprietário ou compartilhado)",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Verificação realizada"),
-                    @ApiResponse(responseCode = "400", description = "Calendário ou usuário não encontrado")
+                    @ApiResponse(responseCode = "404", description = "Calendário ou usuário não encontrado")
             }
     )
     public ResponseEntity<Boolean> temAcesso(
@@ -223,7 +227,7 @@ public class CompartilhamentoController {
             boolean temAcesso = compartilhamentoService.temAcesso(calendarioId, usuarioId);
             return ResponseEntity.ok(temAcesso);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.notFound().build();
         }
     }
 
@@ -233,7 +237,7 @@ public class CompartilhamentoController {
             description = "Verifica se um usuário pode editar um calendário (proprietário ou permissão EDITAR)",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Verificação realizada"),
-                    @ApiResponse(responseCode = "400", description = "Calendário ou usuário não encontrado")
+                    @ApiResponse(responseCode = "404", description = "Calendário ou usuário não encontrado")
             }
     )
     public ResponseEntity<Boolean> podeEditar(
@@ -245,7 +249,7 @@ public class CompartilhamentoController {
             boolean podeEditar = compartilhamentoService.podeEditar(calendarioId, usuarioId);
             return ResponseEntity.ok(podeEditar);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.notFound().build();
         }
     }
 
