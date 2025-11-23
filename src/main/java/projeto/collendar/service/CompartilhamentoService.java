@@ -3,13 +3,19 @@ package projeto.collendar.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import projeto.collendar.dtos.request.CompartilhamentoRequestDTO;
+import projeto.collendar.dtos.response.CalendarioResponseDTO;
+import projeto.collendar.dtos.response.CompartilhamentoResponseDTO;
+import projeto.collendar.dtos.response.PermissaoResponseDTO;
 import projeto.collendar.enums.TipoPermissao;
+import projeto.collendar.exception.BusinessException;
+import projeto.collendar.exception.ResourceNotFoundException;
+import projeto.collendar.mappers.CalendarioMapper;
+import projeto.collendar.mappers.CompartilhamentoMapper;
 import projeto.collendar.model.Calendario;
 import projeto.collendar.model.Compartilhamento;
 import projeto.collendar.model.Usuario;
-import projeto.collendar.repository.CalendarioRepository;
 import projeto.collendar.repository.CompartilhamentoRepository;
-import projeto.collendar.repository.UsuarioRepository;
 
 import java.util.List;
 import java.util.Optional;
@@ -20,106 +26,90 @@ import java.util.UUID;
 public class CompartilhamentoService {
 
     private final CompartilhamentoRepository compartilhamentoRepository;
-    private final CalendarioRepository calendarioRepository;
-    private final UsuarioRepository usuarioRepository;
+    private final CalendarioService calendarioService;
+    private final UsuarioService usuarioService;
 
     @Transactional
-    public Compartilhamento compartilhar(UUID calendarioId, UUID usuarioId, TipoPermissao permissao) {
-        Calendario calendario = calendarioRepository.findById(calendarioId)
-                .orElseThrow(() -> new IllegalArgumentException("Calendário não encontrado"));
+    public CompartilhamentoResponseDTO create(CompartilhamentoRequestDTO dto) {
+        Calendario calendario = calendarioService.findEntityById(dto.calendarioId());
+        Usuario destinatario = usuarioService.findEntityByEmail(dto.emailDestinatario());
 
-        Usuario usuario = usuarioRepository.findById(usuarioId)
-                .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado"));
-
-        if (compartilhamentoRepository.existsByCalendarioAndUsuario(calendario, usuario)) {
-            throw new IllegalArgumentException("Calendário já compartilhado com este usuário");
+        if (calendario.getUsuario().getId().equals(destinatario.getId())) {
+            throw new BusinessException("Não é possível compartilhar o calendário consigo mesmo");
         }
 
-        if (calendario.getUsuario().getId().equals(usuarioId)) {
-            throw new IllegalArgumentException("Não é possível compartilhar o calendário consigo mesmo");
+        if (compartilhamentoRepository.existsByCalendarioAndUsuario(calendario, destinatario)) {
+            throw new BusinessException("Calendário já compartilhado com este usuário");
         }
 
-        Compartilhamento compartilhamento = new Compartilhamento();
-        compartilhamento.setCalendario(calendario);
-        compartilhamento.setUsuario(usuario);
-        compartilhamento.setPermissao(permissao);
-
-        return compartilhamentoRepository.save(compartilhamento);
+        Compartilhamento compartilhamento = CompartilhamentoMapper.toEntity(calendario, destinatario, dto.permissao());
+        compartilhamentoRepository.save(compartilhamento);
+        return CompartilhamentoMapper.toDTO(compartilhamento);
     }
 
-    public Optional<Compartilhamento> buscarPorId(UUID id) {
-        return compartilhamentoRepository.findById(id);
+    public CompartilhamentoResponseDTO findById(UUID id) {
+        return compartilhamentoRepository.findById(id)
+                .map(CompartilhamentoMapper::toDTO)
+                .orElseThrow(() -> new ResourceNotFoundException("Compartilhamento", id.toString()));
     }
 
-    public List<Compartilhamento> listarPorCalendario(UUID calendarioId) {
-        return compartilhamentoRepository.findByCalendarioId(calendarioId);
+    public List<CompartilhamentoResponseDTO> listByCalendario(UUID calendarioId) {
+        return compartilhamentoRepository.findByCalendarioId(calendarioId).stream()
+                .map(CompartilhamentoMapper::toDTO)
+                .toList();
     }
 
-    public List<Calendario> listarCalendariosCompartilhados(UUID usuarioId) {
-        return compartilhamentoRepository.findCalendariosCompartilhadosComUsuario(usuarioId);
+    public List<CalendarioResponseDTO> listSharedWithUsuario(UUID usuarioId) {
+        return compartilhamentoRepository.findCalendariosCompartilhadosComUsuario(usuarioId).stream()
+                .map(c -> CalendarioMapper.toDTO(c, false, getPermissao(c.getId(), usuarioId)))
+                .toList();
     }
 
-    public List<Compartilhamento> listarCompartilhamentosRecebidos(UUID usuarioId) {
-        return compartilhamentoRepository.findByUsuarioId(usuarioId);
-    }
-
-    public Optional<Compartilhamento> buscarCompartilhamento(UUID calendarioId, UUID usuarioId) {
-        Calendario calendario = calendarioRepository.findById(calendarioId)
-                .orElseThrow(() -> new IllegalArgumentException("Calendário não encontrado"));
-
-        Usuario usuario = usuarioRepository.findById(usuarioId)
-                .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado"));
-
-        return compartilhamentoRepository.findByCalendarioAndUsuario(calendario, usuario);
+    public List<CompartilhamentoResponseDTO> listReceivedByUsuario(UUID usuarioId) {
+        return compartilhamentoRepository.findByUsuarioId(usuarioId).stream()
+                .map(CompartilhamentoMapper::toDTO)
+                .toList();
     }
 
     @Transactional
-    public Compartilhamento atualizarPermissao(UUID id, TipoPermissao novaPermissao) {
-        Compartilhamento compartilhamento = compartilhamentoRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Compartilhamento não encontrado"));
-
+    public CompartilhamentoResponseDTO updatePermissao(UUID id, TipoPermissao novaPermissao) {
+        Compartilhamento compartilhamento = findEntityById(id);
         compartilhamento.setPermissao(novaPermissao);
-        return compartilhamentoRepository.save(compartilhamento);
+        return CompartilhamentoMapper.toDTO(compartilhamentoRepository.save(compartilhamento));
     }
 
     @Transactional
-    public void removerCompartilhamento(UUID calendarioId, UUID usuarioId) {
-        compartilhamentoRepository.deleteByCalendarioIdAndUsuarioId(calendarioId, usuarioId);
-    }
-
-    @Transactional
-    public void deletar(UUID id) {
+    public void delete(UUID id) {
         if (!compartilhamentoRepository.existsById(id)) {
-            throw new IllegalArgumentException("Compartilhamento não encontrado");
+            throw new ResourceNotFoundException("Compartilhamento", id.toString());
         }
         compartilhamentoRepository.deleteById(id);
     }
 
-    public boolean temAcesso(UUID calendarioId, UUID usuarioId) {
-        Calendario calendario = calendarioRepository.findById(calendarioId)
-                .orElseThrow(() -> new IllegalArgumentException("Calendário não encontrado"));
+    @Transactional
+    public void deleteByCalendarioAndUsuario(UUID calendarioId, UUID usuarioId) {
+        compartilhamentoRepository.deleteByCalendarioIdAndUsuarioId(calendarioId, usuarioId);
+    }
+
+    public boolean hasAccess(UUID calendarioId, UUID usuarioId) {
+        Calendario calendario = calendarioService.findEntityById(calendarioId);
 
         if (calendario.getUsuario().getId().equals(usuarioId)) {
             return true;
         }
 
-        Usuario usuario = usuarioRepository.findById(usuarioId)
-                .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado"));
-
+        Usuario usuario = usuarioService.findEntityById(usuarioId);
         return compartilhamentoRepository.existsByCalendarioAndUsuario(calendario, usuario);
     }
 
-    public boolean podeEditar(UUID calendarioId, UUID usuarioId) {
-        Calendario calendario = calendarioRepository.findById(calendarioId)
-                .orElseThrow(() -> new IllegalArgumentException("Calendário não encontrado"));
+    public boolean canEdit(UUID calendarioId, UUID usuarioId) {
+        Calendario calendario = calendarioService.findEntityById(calendarioId);
 
         if (calendario.getUsuario().getId().equals(usuarioId)) {
             return true;
         }
 
-        Usuario usuario = usuarioRepository.findById(usuarioId)
-                .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado"));
-
+        Usuario usuario = usuarioService.findEntityById(usuarioId);
         Optional<Compartilhamento> compartilhamento =
                 compartilhamentoRepository.findByCalendarioAndUsuario(calendario, usuario);
 
@@ -127,8 +117,54 @@ public class CompartilhamentoService {
                 compartilhamento.get().getPermissao() == TipoPermissao.EDITAR;
     }
 
-    public long contarPorCalendario(UUID calendarioId) {
+    public PermissaoResponseDTO getMyPermission(UUID calendarioId, UUID usuarioId) {
+        Calendario calendario = calendarioService.findEntityById(calendarioId);
+
+        if (calendario.getUsuario().getId().equals(usuarioId)) {
+            return new PermissaoResponseDTO(true, true, true, null);
+        }
+
+        Usuario usuario = usuarioService.findEntityById(usuarioId);
+        Optional<Compartilhamento> compartilhamento =
+                compartilhamentoRepository.findByCalendarioAndUsuario(calendario, usuario);
+
+        if (compartilhamento.isPresent()) {
+            TipoPermissao permissao = compartilhamento.get().getPermissao();
+            return new PermissaoResponseDTO(
+                    false,
+                    true,
+                    permissao == TipoPermissao.EDITAR,
+                    permissao
+            );
+        }
+
+        return new PermissaoResponseDTO(false, false, false, null);
+    }
+
+    public long countByCalendario(UUID calendarioId) {
         return compartilhamentoRepository.findByCalendarioId(calendarioId).size();
     }
+
+    public UUID getCalendarioIdByCompartilhamento(UUID compartilhamentoId) {
+        Compartilhamento c = findEntityById(compartilhamentoId);
+        return c.getCalendario().getId();
+    }
+
+    public UUID getDestinatarioIdByCompartilhamento(UUID compartilhamentoId) {
+        Compartilhamento c = findEntityById(compartilhamentoId);
+        return c.getUsuario().getId();
+    }
+
+    private Compartilhamento findEntityById(UUID id) {
+        return compartilhamentoRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Compartilhamento", id.toString()));
+    }
+
+    private TipoPermissao getPermissao(UUID calendarioId, UUID usuarioId) {
+        Calendario calendario = calendarioService.findEntityById(calendarioId);
+        Usuario usuario = usuarioService.findEntityById(usuarioId);
+        return compartilhamentoRepository.findByCalendarioAndUsuario(calendario, usuario)
+                .map(Compartilhamento::getPermissao)
+                .orElse(null);
+    }
 }
-//comentario

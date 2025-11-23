@@ -15,7 +15,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import projeto.collendar.dto.EventoDTO;
 import projeto.collendar.enums.TipoRecorrencia;
 import projeto.collendar.model.Calendario;
 import projeto.collendar.model.Evento;

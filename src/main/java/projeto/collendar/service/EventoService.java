@@ -5,14 +5,17 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import projeto.collendar.dtos.request.EventoRequestDTO;
+import projeto.collendar.dtos.response.EventoResponseDTO;
+import projeto.collendar.exception.BusinessException;
+import projeto.collendar.exception.ResourceNotFoundException;
+import projeto.collendar.mappers.EventoMapper;
 import projeto.collendar.model.Calendario;
 import projeto.collendar.model.Evento;
-import projeto.collendar.repository.CalendarioRepository;
 import projeto.collendar.repository.EventoRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -20,100 +23,110 @@ import java.util.UUID;
 public class EventoService {
 
     private final EventoRepository eventoRepository;
-    private final CalendarioRepository calendarioRepository;
+    private final CalendarioService calendarioService;
 
     @Transactional
-    public Evento criar(Evento evento, UUID calendarioId) {
-        Calendario calendario = calendarioRepository.findById(calendarioId)
-                .orElseThrow(() -> new IllegalArgumentException("Calendário não encontrado"));
-
-        validarDatas(evento.getDataInicio(), evento.getDataFim());
-
-        evento.setCalendario(calendario);
-        return eventoRepository.save(evento);
+    public EventoResponseDTO create(EventoRequestDTO dto) {
+        validateDates(dto.dataInicio(), dto.dataFim());
+        Calendario calendario = calendarioService.findEntityById(dto.calendarioId());
+        Evento evento = EventoMapper.toEntity(dto, calendario);
+        eventoRepository.save(evento);
+        return EventoMapper.toDTO(evento);
     }
 
-    public Optional<Evento> buscarPorId(UUID id) {
-        return eventoRepository.findById(id);
+    public EventoResponseDTO findById(UUID id) {
+        return eventoRepository.findById(id)
+                .map(EventoMapper::toDTO)
+                .orElseThrow(() -> new ResourceNotFoundException("Evento", id.toString()));
     }
 
-    public List<Evento> listarTodos() {
-        return eventoRepository.findAll();
+    public List<EventoResponseDTO> listAll() {
+        return eventoRepository.findAll().stream()
+                .map(EventoMapper::toDTO)
+                .toList();
     }
 
-    public List<Evento> listarPorCalendario(UUID calendarioId) {
-        return eventoRepository.findByCalendarioId(calendarioId);
+    public List<EventoResponseDTO> listByCalendario(UUID calendarioId) {
+        return eventoRepository.findByCalendarioId(calendarioId).stream()
+                .map(EventoMapper::toDTO)
+                .toList();
     }
 
-    public Page<Evento> listarPorCalendarioPaginado(UUID calendarioId, Pageable pageable) {
-        Calendario calendario = calendarioRepository.findById(calendarioId)
-                .orElseThrow(() -> new IllegalArgumentException("Calendário não encontrado"));
-        return eventoRepository.findByCalendario(calendario, pageable);
+    public Page<EventoResponseDTO> listByCalendarioPaginated(UUID calendarioId, Pageable pageable) {
+        Calendario calendario = calendarioService.findEntityById(calendarioId);
+        return eventoRepository.findByCalendario(calendario, pageable)
+                .map(EventoMapper::toDTO);
     }
 
-    public List<Evento> buscarPorPeriodo(LocalDateTime dataInicio, LocalDateTime dataFim) {
-        return eventoRepository.findByDataInicioBetween(dataInicio, dataFim);
+    public List<EventoResponseDTO> findByPeriod(LocalDateTime start, LocalDateTime end) {
+        return eventoRepository.findByDataInicioBetween(start, end).stream()
+                .map(EventoMapper::toDTO)
+                .toList();
     }
 
-    public List<Evento> buscarPorCalendarioEPeriodo(UUID calendarioId,
-                                                    LocalDateTime dataInicio,
-                                                    LocalDateTime dataFim) {
-        return eventoRepository.findByCalendarioAndDataBetween(calendarioId, dataInicio, dataFim);
+    public List<EventoResponseDTO> findByCalendarioAndPeriod(UUID calendarioId, LocalDateTime start, LocalDateTime end) {
+        return eventoRepository.findByCalendarioAndDataBetween(calendarioId, start, end).stream()
+                .map(EventoMapper::toDTO)
+                .toList();
     }
 
-    public Page<Evento> buscarPorTitulo(String titulo, Pageable pageable) {
-        return eventoRepository.findByTituloContainingIgnoreCase(titulo, pageable);
+    public Page<EventoResponseDTO> searchByTitulo(String titulo, Pageable pageable) {
+        return eventoRepository.findByTituloContainingIgnoreCase(titulo, pageable)
+                .map(EventoMapper::toDTO);
     }
 
-    public List<Evento> listarRecorrentes() {
-        return eventoRepository.findByRecorrente(true);
-    }
-
-    @Transactional
-    public Evento atualizar(UUID id, Evento eventoAtualizado) {
-        Evento evento = eventoRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Evento não encontrado"));
-
-        validarDatas(eventoAtualizado.getDataInicio(), eventoAtualizado.getDataFim());
-
-        evento.setTitulo(eventoAtualizado.getTitulo());
-        evento.setDescricao(eventoAtualizado.getDescricao());
-        evento.setDataInicio(eventoAtualizado.getDataInicio());
-        evento.setDataFim(eventoAtualizado.getDataFim());
-        evento.setLocal(eventoAtualizado.getLocal());
-        evento.setCor(eventoAtualizado.getCor());
-        evento.setDiaInteiro(eventoAtualizado.getDiaInteiro());
-        evento.setRecorrente(eventoAtualizado.getRecorrente());
-        evento.setTipoRecorrencia(eventoAtualizado.getTipoRecorrencia());
-
-        return eventoRepository.save(evento);
+    public List<EventoResponseDTO> listRecorrentes() {
+        return eventoRepository.findByRecorrente(true).stream()
+                .map(EventoMapper::toDTO)
+                .toList();
     }
 
     @Transactional
-    public void deletar(UUID id) {
+    public EventoResponseDTO update(UUID id, EventoRequestDTO dto) {
+        validateDates(dto.dataInicio(), dto.dataFim());
+        Evento evento = findEntityById(id);
+
+        evento.setTitulo(dto.titulo());
+        evento.setDescricao(dto.descricao());
+        evento.setDataInicio(dto.dataInicio());
+        evento.setDataFim(dto.dataFim());
+        evento.setLocal(dto.local());
+        evento.setCor(dto.cor());
+        evento.setDiaInteiro(dto.diaInteiro());
+        evento.setRecorrente(dto.recorrente());
+        evento.setTipoRecorrencia(dto.tipoRecorrencia());
+
+        return EventoMapper.toDTO(eventoRepository.save(evento));
+    }
+
+    @Transactional
+    public void delete(UUID id) {
         if (!eventoRepository.existsById(id)) {
-            throw new IllegalArgumentException("Evento não encontrado");
+            throw new ResourceNotFoundException("Evento", id.toString());
         }
         eventoRepository.deleteById(id);
     }
 
-    public long contarPorCalendario(UUID calendarioId) {
+    public long countByCalendario(UUID calendarioId) {
         return eventoRepository.findByCalendarioId(calendarioId).size();
     }
 
-    public boolean pertenceAoCalendario(UUID eventoId, UUID calendarioId) {
-        Evento evento = eventoRepository.findById(eventoId)
-                .orElseThrow(() -> new IllegalArgumentException("Evento não encontrado"));
-        return evento.getCalendario().getId().equals(calendarioId);
+    public UUID getCalendarioIdByEvento(UUID eventoId) {
+        Evento evento = findEntityById(eventoId);
+        return evento.getCalendario().getId();
     }
 
-    private void validarDatas(LocalDateTime dataInicio, LocalDateTime dataFim) {
-        if (dataInicio == null || dataFim == null) {
-            throw new IllegalArgumentException("Datas de início e fim são obrigatórias");
+    public Evento findEntityById(UUID id) {
+        return eventoRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Evento", id.toString()));
+    }
+
+    private void validateDates(LocalDateTime start, LocalDateTime end) {
+        if (start == null || end == null) {
+            throw new BusinessException("Datas de início e fim são obrigatórias");
         }
-        if (dataFim.isBefore(dataInicio)) {
-            throw new IllegalArgumentException("Data de fim deve ser posterior à data de início");
+        if (end.isBefore(start)) {
+            throw new BusinessException("Data de fim deve ser posterior à data de início");
         }
     }
 }
-//comentario

@@ -11,7 +11,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import projeto.collendar.dto.UsuarioDTO;
 import projeto.collendar.model.Role;
 import projeto.collendar.model.Usuario;
 import projeto.collendar.service.UsuarioService;

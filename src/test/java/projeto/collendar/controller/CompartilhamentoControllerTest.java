@@ -11,8 +11,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import projeto.collendar.dto.CalendarioDTO;
-import projeto.collendar.dto.CompartilhamentoDTO;
 import projeto.collendar.enums.TipoPermissao;
 import projeto.collendar.model.Calendario;
 import projeto.collendar.model.Compartilhamento;

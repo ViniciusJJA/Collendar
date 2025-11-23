@@ -2,8 +2,11 @@ package projeto.collendar.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -11,14 +14,16 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import projeto.collendar.dto.EventoDTO;
-import projeto.collendar.model.Evento;
+import projeto.collendar.dtos.request.EventoRequestDTO;
+import projeto.collendar.dtos.response.EventoResponseDTO;
+import projeto.collendar.exception.AccessDeniedException;
+import projeto.collendar.service.CompartilhamentoService;
 import projeto.collendar.service.EventoService;
+import projeto.collendar.utils.SecurityUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/eventos")
@@ -27,268 +32,173 @@ import java.util.stream.Collectors;
 public class EventoController {
 
     private final EventoService eventoService;
+    private final CompartilhamentoService compartilhamentoService;
+    private final SecurityUtils securityUtils;
 
     @PostMapping
     @Operation(
             summary = "Criar novo evento",
-            description = "Cria um novo evento em um calendário específico",
+            description = "Cria evento se tiver permissão EDITAR no calendário",
             responses = {
-                    @ApiResponse(responseCode = "201", description = "Evento criado com sucesso"),
-                    @ApiResponse(responseCode = "400", description = "Dados inválidos ou calendário não encontrado")
+                    @ApiResponse(responseCode = "201", description = "Evento criado",
+                            content = @Content(schema = @Schema(implementation = EventoResponseDTO.class))),
+                    @ApiResponse(responseCode = "403", description = "Sem permissão"),
+                    @ApiResponse(responseCode = "400", description = "Dados inválidos")
             }
     )
-    public ResponseEntity<EventoDTO> criar(
-            @RequestBody Evento evento,
-            @Parameter(description = "ID do calendário", required = true)
-            @RequestParam UUID calendarioId) {
-        try {
-            Evento novoEvento = eventoService.criar(evento, calendarioId);
-            return ResponseEntity.status(HttpStatus.CREATED).body(toDTO(novoEvento));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+    public ResponseEntity<EventoResponseDTO> create(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    description = "Dados do evento",
+                    required = true,
+                    content = @Content(schema = @Schema(implementation = EventoRequestDTO.class))
+            )
+            @RequestBody @Valid EventoRequestDTO dto) {
+        UUID usuarioId = securityUtils.getLoggedUserId();
+
+        if (!compartilhamentoService.canEdit(dto.calendarioId(), usuarioId)) {
+            throw new AccessDeniedException("Você não tem permissão para criar eventos neste calendário");
         }
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(eventoService.create(dto));
     }
 
     @GetMapping("/{id}")
     @Operation(
             summary = "Buscar evento por ID",
-            description = "Retorna os dados de um evento específico",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Evento encontrado"),
-                    @ApiResponse(responseCode = "404", description = "Evento não encontrado")
+                    @ApiResponse(responseCode = "403", description = "Sem acesso"),
+                    @ApiResponse(responseCode = "404", description = "Não encontrado")
             }
     )
-    public ResponseEntity<EventoDTO> buscarPorId(
+    public ResponseEntity<EventoResponseDTO> findById(
             @Parameter(description = "ID do evento", required = true)
             @PathVariable UUID id) {
-        return eventoService.buscarPorId(id)
-                .map(evento -> ResponseEntity.ok(toDTO(evento)))
-                .orElse(ResponseEntity.notFound().build());
-    }
+        UUID usuarioId = securityUtils.getLoggedUserId();
+        UUID calendarioId = eventoService.getCalendarioIdByEvento(id);
 
-    @GetMapping
-    @Operation(
-            summary = "Listar todos os eventos",
-            description = "Retorna lista de todos os eventos do sistema",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso")
-            }
-    )
-    public ResponseEntity<List<EventoDTO>> listarTodos() {
-        List<EventoDTO> eventos = eventoService.listarTodos()
-                .stream()
-                .map(this::toDTO)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(eventos);
+        if (!compartilhamentoService.hasAccess(calendarioId, usuarioId)) {
+            throw new AccessDeniedException("Você não tem acesso a este evento");
+        }
+
+        return ResponseEntity.ok(eventoService.findById(id));
     }
 
     @GetMapping("/calendario/{calendarioId}")
-    @Operation(
-            summary = "Listar eventos do calendário",
-            description = "Retorna todos os eventos de um calendário específico",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Lista de eventos retornada")
-            }
-    )
-    public ResponseEntity<List<EventoDTO>> listarPorCalendario(
+    @Operation(summary = "Listar eventos do calendário")
+    public ResponseEntity<List<EventoResponseDTO>> listByCalendario(
             @Parameter(description = "ID do calendário", required = true)
             @PathVariable UUID calendarioId) {
-        List<EventoDTO> eventos = eventoService.listarPorCalendario(calendarioId)
-                .stream()
-                .map(this::toDTO)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(eventos);
+        UUID usuarioId = securityUtils.getLoggedUserId();
+
+        if (!compartilhamentoService.hasAccess(calendarioId, usuarioId)) {
+            throw new AccessDeniedException("Você não tem acesso a este calendário");
+        }
+
+        return ResponseEntity.ok(eventoService.listByCalendario(calendarioId));
     }
 
     @GetMapping("/calendario/{calendarioId}/paginado")
-    @Operation(
-            summary = "Listar eventos do calendário (paginado)",
-            description = "Retorna eventos do calendário com paginação",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Página retornada com sucesso"),
-                    @ApiResponse(responseCode = "400", description = "Calendário não encontrado")
-            }
-    )
-    public ResponseEntity<Page<EventoDTO>> listarPorCalendarioPaginado(
+    @Operation(summary = "Listar eventos do calendário (paginado)")
+    public ResponseEntity<Page<EventoResponseDTO>> listByCalendarioPaginado(
             @Parameter(description = "ID do calendário", required = true)
             @PathVariable UUID calendarioId,
             Pageable pageable) {
-        try {
-            Page<EventoDTO> eventos = eventoService.listarPorCalendarioPaginado(calendarioId, pageable)
-                    .map(this::toDTO);
-            return ResponseEntity.ok(eventos);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
-        }
-    }
+        UUID usuarioId = securityUtils.getLoggedUserId();
 
-    @GetMapping("/periodo")
-    @Operation(
-            summary = "Buscar eventos por período",
-            description = "Busca eventos que ocorrem em um intervalo de datas",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Eventos encontrados")
-            }
-    )
-    public ResponseEntity<List<EventoDTO>> buscarPorPeriodo(
-            @Parameter(description = "Data/hora inicial (formato: 2025-01-01T00:00:00)", required = true)
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataInicio,
-            @Parameter(description = "Data/hora final (formato: 2025-01-31T23:59:59)", required = true)
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataFim) {
-        List<EventoDTO> eventos = eventoService.buscarPorPeriodo(dataInicio, dataFim)
-                .stream()
-                .map(this::toDTO)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(eventos);
+        if (!compartilhamentoService.hasAccess(calendarioId, usuarioId)) {
+            throw new AccessDeniedException("Você não tem acesso a este calendário");
+        }
+
+        return ResponseEntity.ok(eventoService.listByCalendarioPaginated(calendarioId, pageable));
     }
 
     @GetMapping("/calendario/{calendarioId}/periodo")
-    @Operation(
-            summary = "Buscar eventos por calendário e período",
-            description = "Busca eventos de um calendário específico em um intervalo de datas",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Eventos encontrados")
-            }
-    )
-    public ResponseEntity<List<EventoDTO>> buscarPorCalendarioEPeriodo(
+    @Operation(summary = "Buscar eventos por calendário e período")
+    public ResponseEntity<List<EventoResponseDTO>> findByCalendarioAndPeriodo(
             @Parameter(description = "ID do calendário", required = true)
             @PathVariable UUID calendarioId,
             @Parameter(description = "Data/hora inicial", required = true)
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataInicio,
             @Parameter(description = "Data/hora final", required = true)
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataFim) {
-        List<EventoDTO> eventos = eventoService.buscarPorCalendarioEPeriodo(calendarioId, dataInicio, dataFim)
-                .stream()
-                .map(this::toDTO)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(eventos);
+
+        UUID usuarioId = securityUtils.getLoggedUserId();
+
+        if (!compartilhamentoService.hasAccess(calendarioId, usuarioId)) {
+            throw new AccessDeniedException("Você não tem acesso a este calendário");
+        }
+
+        return ResponseEntity.ok(eventoService.findByCalendarioAndPeriod(calendarioId, dataInicio, dataFim));
     }
 
     @GetMapping("/buscar")
-    @Operation(
-            summary = "Buscar eventos por título",
-            description = "Busca eventos que contenham o texto informado no título",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Resultados da busca retornados")
-            }
-    )
-    public ResponseEntity<Page<EventoDTO>> buscarPorTitulo(
-            @Parameter(description = "Título ou parte do título do evento", required = true)
+    @Operation(summary = "Buscar eventos por título")
+    public ResponseEntity<Page<EventoResponseDTO>> searchByTitulo(
+            @Parameter(description = "Título ou parte do título", required = true)
             @RequestParam String titulo,
             Pageable pageable) {
-        Page<EventoDTO> eventos = eventoService.buscarPorTitulo(titulo, pageable)
-                .map(this::toDTO);
-        return ResponseEntity.ok(eventos);
+        return ResponseEntity.ok(eventoService.searchByTitulo(titulo, pageable));
     }
 
     @GetMapping("/recorrentes")
-    @Operation(
-            summary = "Listar eventos recorrentes",
-            description = "Retorna todos os eventos marcados como recorrentes",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Lista de eventos recorrentes")
-            }
-    )
-    public ResponseEntity<List<EventoDTO>> listarRecorrentes() {
-        List<EventoDTO> eventos = eventoService.listarRecorrentes()
-                .stream()
-                .map(this::toDTO)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(eventos);
+    @Operation(summary = "Listar eventos recorrentes")
+    public ResponseEntity<List<EventoResponseDTO>> listRecorrentes() {
+        return ResponseEntity.ok(eventoService.listRecorrentes());
     }
 
     @PutMapping("/{id}")
     @Operation(
             summary = "Atualizar evento",
-            description = "Atualiza os dados de um evento existente",
+            description = "Atualiza se tiver permissão EDITAR no calendário",
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Evento atualizado com sucesso"),
-                    @ApiResponse(responseCode = "400", description = "Dados inválidos"),
-                    @ApiResponse(responseCode = "404", description = "Evento não encontrado")
+                    @ApiResponse(responseCode = "200", description = "Atualizado"),
+                    @ApiResponse(responseCode = "403", description = "Sem permissão"),
+                    @ApiResponse(responseCode = "404", description = "Não encontrado")
             }
     )
-    public ResponseEntity<EventoDTO> atualizar(
+    public ResponseEntity<EventoResponseDTO> update(
             @Parameter(description = "ID do evento", required = true)
             @PathVariable UUID id,
-            @RequestBody Evento evento) {
-        try {
-            Evento eventoAtualizado = eventoService.atualizar(id, evento);
-            return ResponseEntity.ok(toDTO(eventoAtualizado));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            @RequestBody @Valid EventoRequestDTO dto) {
+        UUID usuarioId = securityUtils.getLoggedUserId();
+        UUID calendarioId = eventoService.getCalendarioIdByEvento(id);
+
+        if (!compartilhamentoService.canEdit(calendarioId, usuarioId)) {
+            throw new AccessDeniedException("Você não tem permissão para editar eventos neste calendário");
         }
+
+        return ResponseEntity.ok(eventoService.update(id, dto));
     }
 
     @DeleteMapping("/{id}")
-    @Operation(
-            summary = "Deletar evento",
-            description = "Remove permanentemente um evento do calendário",
-            responses = {
-                    @ApiResponse(responseCode = "204", description = "Evento deletado com sucesso"),
-                    @ApiResponse(responseCode = "404", description = "Evento não encontrado")
-            }
-    )
-    public ResponseEntity<Void> deletar(
+    @Operation(summary = "Deletar evento")
+    @ApiResponse(responseCode = "204", description = "Deletado")
+    public ResponseEntity<Void> delete(
             @Parameter(description = "ID do evento", required = true)
             @PathVariable UUID id) {
-        try {
-            eventoService.deletar(id);
-            return ResponseEntity.noContent().build();
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.notFound().build();
+        UUID usuarioId = securityUtils.getLoggedUserId();
+        UUID calendarioId = eventoService.getCalendarioIdByEvento(id);
+
+        if (!compartilhamentoService.canEdit(calendarioId, usuarioId)) {
+            throw new AccessDeniedException("Você não tem permissão para deletar eventos neste calendário");
         }
+
+        eventoService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/calendario/{calendarioId}/contar")
-    @Operation(
-            summary = "Contar eventos do calendário",
-            description = "Retorna a quantidade total de eventos de um calendário",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Contagem realizada")
-            }
-    )
-    public ResponseEntity<Long> contarPorCalendario(
+    @Operation(summary = "Contar eventos do calendário")
+    public ResponseEntity<Long> countByCalendario(
             @Parameter(description = "ID do calendário", required = true)
             @PathVariable UUID calendarioId) {
-        long quantidade = eventoService.contarPorCalendario(calendarioId);
-        return ResponseEntity.ok(quantidade);
-    }
+        UUID usuarioId = securityUtils.getLoggedUserId();
 
-    @GetMapping("/{eventoId}/pertence-calendario/{calendarioId}")
-    @Operation(summary = "Verificar pertencimento ao calendário",
-            description = "Verifica se um evento pertence a um calendário específico",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Verificação realizada"),
-                    @ApiResponse(responseCode = "400", description = "Evento não encontrado")
-            }
-    )
-    public ResponseEntity<Boolean> pertenceAoCalendario(
-            @Parameter(description = "ID do evento", required = true)
-            @PathVariable UUID eventoId,
-            @Parameter(description = "ID do calendário", required = true)
-            @PathVariable UUID calendarioId) {
-        try {
-            boolean pertence = eventoService.pertenceAoCalendario(eventoId, calendarioId);
-            return ResponseEntity.ok(pertence);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+        if (!compartilhamentoService.hasAccess(calendarioId, usuarioId)) {
+            throw new AccessDeniedException("Você não tem acesso a este calendário");
         }
-    }
 
-    private EventoDTO toDTO(Evento evento) {
-        EventoDTO dto = new EventoDTO();
-        dto.setId(evento.getId());
-        dto.setTitulo(evento.getTitulo());
-        dto.setDescricao(evento.getDescricao());
-        dto.setDataInicio(evento.getDataInicio());
-        dto.setDataFim(evento.getDataFim());
-        dto.setLocal(evento.getLocal());
-        dto.setCor(evento.getCor());
-        dto.setDiaInteiro(evento.getDiaInteiro());
-        dto.setRecorrente(evento.getRecorrente());
-        dto.setTipoRecorrencia(evento.getTipoRecorrencia());
-        dto.setCalendarioId(evento.getCalendario().getId());
-        dto.setCalendarioNome(evento.getCalendario().getNome());
-        return dto;
+        return ResponseEntity.ok(eventoService.countByCalendario(calendarioId));
     }
 }

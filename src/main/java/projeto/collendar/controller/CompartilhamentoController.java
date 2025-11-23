@@ -2,294 +2,160 @@ package projeto.collendar.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import projeto.collendar.dto.CalendarioDTO;
-import projeto.collendar.dto.CompartilhamentoDTO;
+import projeto.collendar.dtos.request.CompartilhamentoRequestDTO;
+import projeto.collendar.dtos.response.CalendarioResponseDTO;
+import projeto.collendar.dtos.response.CompartilhamentoResponseDTO;
+import projeto.collendar.dtos.response.PermissaoResponseDTO;
 import projeto.collendar.enums.TipoPermissao;
-import projeto.collendar.model.Calendario;
-import projeto.collendar.model.Compartilhamento;
+import projeto.collendar.exception.AccessDeniedException;
+import projeto.collendar.service.CalendarioService;
 import projeto.collendar.service.CompartilhamentoService;
+import projeto.collendar.utils.SecurityUtils;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/compartilhamentos")
 @RequiredArgsConstructor
-@Tag(name = "Compartilhamentos", description = "Gerenciamento de compartilhamento de calendários entre usuários")
+@Tag(name = "Compartilhamentos", description = "Gerenciamento de compartilhamento de calendários")
 public class CompartilhamentoController {
 
     private final CompartilhamentoService compartilhamentoService;
+    private final CalendarioService calendarioService;
+    private final SecurityUtils securityUtils;
 
     @PostMapping
     @Operation(
             summary = "Compartilhar calendário",
-            description = "Compartilha um calendário com outro usuário definindo o tipo de permissão (VISUALIZAR ou EDITAR)",
+            description = "Apenas o dono pode compartilhar",
             responses = {
-                    @ApiResponse(responseCode = "201", description = "Calendário compartilhado com sucesso"),
-                    @ApiResponse(responseCode = "400", description = "Calendário já compartilhado ou tentativa de compartilhar consigo mesmo"),
-                    @ApiResponse(responseCode = "404", description = "Calendário ou usuário não encontrado")
+                    @ApiResponse(responseCode = "201", description = "Compartilhado com sucesso",
+                            content = @Content(schema = @Schema(implementation = CompartilhamentoResponseDTO.class))),
+                    @ApiResponse(responseCode = "403", description = "Apenas o dono pode compartilhar"),
+                    @ApiResponse(responseCode = "400", description = "Já compartilhado ou dados inválidos")
             }
     )
-    public ResponseEntity<CompartilhamentoDTO> compartilhar(
-            @Parameter(description = "ID do calendário a ser compartilhado", required = true)
-            @RequestParam UUID calendarioId,
-            @Parameter(description = "ID do usuário que receberá o compartilhamento", required = true)
-            @RequestParam UUID usuarioId,
-            @Parameter(description = "Tipo de permissão: VISUALIZAR ou EDITAR", required = true)
-            @RequestParam TipoPermissao permissao) {
-        try {
-            Compartilhamento compartilhamento = compartilhamentoService.compartilhar(calendarioId, usuarioId, permissao);
-            return ResponseEntity.status(HttpStatus.CREATED).body(toDTO(compartilhamento));
-        } catch (IllegalArgumentException e) {
-            // Se a mensagem contém "não encontrado", retorna 404, senão 400
-            if (e.getMessage().toLowerCase().contains("não encontrado")) {
-                return ResponseEntity.notFound().build();
-            }
-            return ResponseEntity.badRequest().build();
-        }
-    }
+    public ResponseEntity<CompartilhamentoResponseDTO> create(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    description = "Dados do compartilhamento",
+                    required = true,
+                    content = @Content(schema = @Schema(implementation = CompartilhamentoRequestDTO.class))
+            )
+            @RequestBody @Valid CompartilhamentoRequestDTO dto) {
+        UUID usuarioId = securityUtils.getLoggedUserId();
 
-    @GetMapping("/{id}")
-    @Operation(
-            summary = "Buscar compartilhamento por ID",
-            description = "Retorna os dados de um compartilhamento específico",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Compartilhamento encontrado"),
-                    @ApiResponse(responseCode = "404", description = "Compartilhamento não encontrado")
-            }
-    )
-    public ResponseEntity<CompartilhamentoDTO> buscarPorId(
-            @Parameter(description = "ID do compartilhamento", required = true)
-            @PathVariable UUID id) {
-        return compartilhamentoService.buscarPorId(id)
-                .map(compartilhamento -> ResponseEntity.ok(toDTO(compartilhamento)))
-                .orElse(ResponseEntity.notFound().build());
+        if (!calendarioService.isOwner(dto.calendarioId(), usuarioId)) {
+            throw new AccessDeniedException("Apenas o proprietário pode compartilhar o calendário");
+        }
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(compartilhamentoService.create(dto));
     }
 
     @GetMapping("/calendario/{calendarioId}")
     @Operation(
             summary = "Listar compartilhamentos do calendário",
-            description = "Lista todos os usuários com quem o calendário foi compartilhado",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Lista de compartilhamentos retornada")
-            }
+            description = "Apenas o dono pode ver"
     )
-    public ResponseEntity<List<CompartilhamentoDTO>> listarPorCalendario(
+    public ResponseEntity<List<CompartilhamentoResponseDTO>> listByCalendario(
             @Parameter(description = "ID do calendário", required = true)
             @PathVariable UUID calendarioId) {
-        List<CompartilhamentoDTO> compartilhamentos = compartilhamentoService.listarPorCalendario(calendarioId)
-                .stream()
-                .map(this::toDTO)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(compartilhamentos);
-    }
+        UUID usuarioId = securityUtils.getLoggedUserId();
 
-    @GetMapping("/usuario/{usuarioId}/calendarios")
-    @Operation(
-            summary = "Listar calendários compartilhados com o usuário",
-            description = "Retorna todos os calendários que foram compartilhados com o usuário",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Lista de calendários compartilhados")
-            }
-    )
-    public ResponseEntity<List<CalendarioDTO>> listarCalendariosCompartilhados(
-            @Parameter(description = "ID do usuário", required = true)
-            @PathVariable UUID usuarioId) {
-        List<CalendarioDTO> calendarios = compartilhamentoService.listarCalendariosCompartilhados(usuarioId)
-                .stream()
-                .map(this::toCalendarioDTO)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(calendarios);
-    }
-
-    @GetMapping("/usuario/{usuarioId}/recebidos")
-    @Operation(
-            summary = "Listar compartilhamentos recebidos",
-            description = "Lista todos os compartilhamentos que o usuário recebeu",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Lista de compartilhamentos recebidos")
-            }
-    )
-    public ResponseEntity<List<CompartilhamentoDTO>> listarCompartilhamentosRecebidos(
-            @Parameter(description = "ID do usuário", required = true)
-            @PathVariable UUID usuarioId) {
-        List<CompartilhamentoDTO> compartilhamentos = compartilhamentoService.listarCompartilhamentosRecebidos(usuarioId)
-                .stream()
-                .map(this::toDTO)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(compartilhamentos);
-    }
-
-    @GetMapping("/calendario/{calendarioId}/usuario/{usuarioId}")
-    @Operation(
-            summary = "Buscar compartilhamento específico",
-            description = "Busca o compartilhamento de um calendário com um usuário específico",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Compartilhamento encontrado"),
-                    @ApiResponse(responseCode = "404", description = "Compartilhamento, calendário ou usuário não encontrado")
-            }
-    )
-    public ResponseEntity<CompartilhamentoDTO> buscarCompartilhamento(
-            @Parameter(description = "ID do calendário", required = true)
-            @PathVariable UUID calendarioId,
-            @Parameter(description = "ID do usuário", required = true)
-            @PathVariable UUID usuarioId) {
-        try {
-            return compartilhamentoService.buscarCompartilhamento(calendarioId, usuarioId)
-                    .map(compartilhamento -> ResponseEntity.ok(toDTO(compartilhamento)))
-                    .orElse(ResponseEntity.notFound().build());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.notFound().build();
+        if (!calendarioService.isOwner(calendarioId, usuarioId)) {
+            throw new AccessDeniedException("Apenas o proprietário pode ver os compartilhamentos");
         }
+
+        return ResponseEntity.ok(compartilhamentoService.listByCalendario(calendarioId));
+    }
+
+    @GetMapping("/recebidos")
+    @Operation(summary = "Listar calendários compartilhados comigo")
+    public ResponseEntity<List<CalendarioResponseDTO>> listRecebidos() {
+        UUID usuarioId = securityUtils.getLoggedUserId();
+        return ResponseEntity.ok(compartilhamentoService.listSharedWithUsuario(usuarioId));
+    }
+
+    @GetMapping("/recebidos/detalhes")
+    @Operation(summary = "Listar detalhes dos compartilhamentos recebidos")
+    public ResponseEntity<List<CompartilhamentoResponseDTO>> listRecebidosDetalhes() {
+        UUID usuarioId = securityUtils.getLoggedUserId();
+        return ResponseEntity.ok(compartilhamentoService.listReceivedByUsuario(usuarioId));
+    }
+
+    @GetMapping("/calendario/{calendarioId}/minha-permissao")
+    @Operation(summary = "Ver minha permissão em um calendário")
+    public ResponseEntity<PermissaoResponseDTO> getMyPermission(
+            @Parameter(description = "ID do calendário", required = true)
+            @PathVariable UUID calendarioId) {
+        UUID usuarioId = securityUtils.getLoggedUserId();
+        return ResponseEntity.ok(compartilhamentoService.getMyPermission(calendarioId, usuarioId));
     }
 
     @PatchMapping("/{id}/permissao")
     @Operation(
-            summary = "Atualizar permissão do compartilhamento",
-            description = "Altera o tipo de permissão de um compartilhamento existente",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Permissão atualizada com sucesso"),
-                    @ApiResponse(responseCode = "404", description = "Compartilhamento não encontrado")
-            }
+            summary = "Atualizar permissão",
+            description = "Apenas o dono do calendário pode alterar"
     )
-    public ResponseEntity<CompartilhamentoDTO> atualizarPermissao(
+    public ResponseEntity<CompartilhamentoResponseDTO> updatePermissao(
             @Parameter(description = "ID do compartilhamento", required = true)
             @PathVariable UUID id,
-            @Parameter(description = "Nova permissão (VISUALIZAR ou EDITAR)", required = true)
+            @Parameter(description = "Nova permissão", required = true)
             @RequestParam TipoPermissao permissao) {
-        try {
-            Compartilhamento compartilhamento = compartilhamentoService.atualizarPermissao(id, permissao);
-            return ResponseEntity.ok(toDTO(compartilhamento));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.notFound().build();
-        }
-    }
+        UUID usuarioId = securityUtils.getLoggedUserId();
+        UUID calendarioId = compartilhamentoService.getCalendarioIdByCompartilhamento(id);
 
-    @DeleteMapping("/calendario/{calendarioId}/usuario/{usuarioId}")
-    @Operation(
-            summary = "Remover compartilhamento",
-            description = "Remove o compartilhamento de um calendário com um usuário específico",
-            responses = {
-                    @ApiResponse(responseCode = "204", description = "Compartilhamento removido com sucesso")
-            }
-    )
-    public ResponseEntity<Void> removerCompartilhamento(
-            @Parameter(description = "ID do calendário", required = true)
-            @PathVariable UUID calendarioId,
-            @Parameter(description = "ID do usuário", required = true)
-            @PathVariable UUID usuarioId) {
-        compartilhamentoService.removerCompartilhamento(calendarioId, usuarioId);
-        return ResponseEntity.noContent().build();
+        if (!calendarioService.isOwner(calendarioId, usuarioId)) {
+            throw new AccessDeniedException("Apenas o proprietário pode alterar permissões");
+        }
+
+        return ResponseEntity.ok(compartilhamentoService.updatePermissao(id, permissao));
     }
 
     @DeleteMapping("/{id}")
     @Operation(
-            summary = "Deletar compartilhamento",
-            description = "Remove um compartilhamento pelo ID",
-            responses = {
-                    @ApiResponse(responseCode = "204", description = "Compartilhamento deletado com sucesso"),
-                    @ApiResponse(responseCode = "404", description = "Compartilhamento não encontrado")
-            }
+            summary = "Remover compartilhamento",
+            description = "Dono do calendário ou destinatário podem remover"
     )
-    public ResponseEntity<Void> deletar(
+    @ApiResponse(responseCode = "204", description = "Removido")
+    public ResponseEntity<Void> delete(
             @Parameter(description = "ID do compartilhamento", required = true)
             @PathVariable UUID id) {
-        try {
-            compartilhamentoService.deletar(id);
-            return ResponseEntity.noContent().build();
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.notFound().build();
-        }
-    }
+        UUID usuarioId = securityUtils.getLoggedUserId();
+        UUID calendarioId = compartilhamentoService.getCalendarioIdByCompartilhamento(id);
+        UUID destinatarioId = compartilhamentoService.getDestinatarioIdByCompartilhamento(id);
 
-    @GetMapping("/calendario/{calendarioId}/usuario/{usuarioId}/tem-acesso")
-    @Operation(
-            summary = "Verificar acesso ao calendário",
-            description = "Verifica se um usuário tem acesso a um calendário (proprietário ou compartilhado)",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Verificação realizada"),
-                    @ApiResponse(responseCode = "404", description = "Calendário ou usuário não encontrado")
-            }
-    )
-    public ResponseEntity<Boolean> temAcesso(
-            @Parameter(description = "ID do calendário", required = true)
-            @PathVariable UUID calendarioId,
-            @Parameter(description = "ID do usuário", required = true)
-            @PathVariable UUID usuarioId) {
-        try {
-            boolean temAcesso = compartilhamentoService.temAcesso(calendarioId, usuarioId);
-            return ResponseEntity.ok(temAcesso);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.notFound().build();
-        }
-    }
+        boolean isOwner = calendarioService.isOwner(calendarioId, usuarioId);
+        boolean isDestinatario = destinatarioId.equals(usuarioId);
 
-    @GetMapping("/calendario/{calendarioId}/usuario/{usuarioId}/pode-editar")
-    @Operation(
-            summary = "Verificar permissão de edição",
-            description = "Verifica se um usuário pode editar um calendário (proprietário ou permissão EDITAR)",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Verificação realizada"),
-                    @ApiResponse(responseCode = "404", description = "Calendário ou usuário não encontrado")
-            }
-    )
-    public ResponseEntity<Boolean> podeEditar(
-            @Parameter(description = "ID do calendário", required = true)
-            @PathVariable UUID calendarioId,
-            @Parameter(description = "ID do usuário", required = true)
-            @PathVariable UUID usuarioId) {
-        try {
-            boolean podeEditar = compartilhamentoService.podeEditar(calendarioId, usuarioId);
-            return ResponseEntity.ok(podeEditar);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.notFound().build();
+        if (!isOwner && !isDestinatario) {
+            throw new AccessDeniedException("Você não tem permissão para remover este compartilhamento");
         }
+
+        compartilhamentoService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/calendario/{calendarioId}/contar")
-    @Operation(
-            summary = "Contar compartilhamentos do calendário",
-            description = "Retorna a quantidade de usuários com quem o calendário foi compartilhado",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Contagem realizada")
-            }
-    )
-    public ResponseEntity<Long> contarPorCalendario(
+    @Operation(summary = "Contar compartilhamentos do calendário")
+    public ResponseEntity<Long> countByCalendario(
             @Parameter(description = "ID do calendário", required = true)
             @PathVariable UUID calendarioId) {
-        long quantidade = compartilhamentoService.contarPorCalendario(calendarioId);
-        return ResponseEntity.ok(quantidade);
-    }
+        UUID usuarioId = securityUtils.getLoggedUserId();
 
-    private CompartilhamentoDTO toDTO(Compartilhamento compartilhamento) {
-        CompartilhamentoDTO dto = new CompartilhamentoDTO();
-        dto.setId(compartilhamento.getId());
-        dto.setCalendarioId(compartilhamento.getCalendario().getId());
-        dto.setCalendarioNome(compartilhamento.getCalendario().getNome());
-        dto.setUsuarioId(compartilhamento.getUsuario().getId());
-        dto.setUsuarioNome(compartilhamento.getUsuario().getNome());
-        dto.setPermissao(compartilhamento.getPermissao());
-        dto.setCreatedAt(compartilhamento.getCreatedAt());
-        return dto;
-    }
+        if (!calendarioService.isOwner(calendarioId, usuarioId)) {
+            throw new AccessDeniedException("Apenas o proprietário pode ver esta informação");
+        }
 
-    private CalendarioDTO toCalendarioDTO(Calendario calendario) {
-        CalendarioDTO dto = new CalendarioDTO();
-        dto.setId(calendario.getId());
-        dto.setNome(calendario.getNome());
-        dto.setDescricao(calendario.getDescricao());
-        dto.setCor(calendario.getCor());
-        dto.setUsuarioId(calendario.getUsuario().getId());
-        dto.setUsuarioNome(calendario.getUsuario().getNome());
-        dto.setCreatedAt(calendario.getCreatedAt());
-        dto.setUpdatedAt(calendario.getUpdatedAt());
-        return dto;
+        return ResponseEntity.ok(compartilhamentoService.countByCalendario(calendarioId));
     }
 }
