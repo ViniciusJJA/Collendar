@@ -1,22 +1,23 @@
 package projeto.collendar.controller;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayNameGeneration;
-import org.junit.jupiter.api.DisplayNameGenerator;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import projeto.collendar.dtos.request.CompartilhamentoRequestDTO;
+import projeto.collendar.dtos.response.CalendarioResponseDTO;
+import projeto.collendar.dtos.response.CompartilhamentoResponseDTO;
+import projeto.collendar.dtos.response.PermissaoResponseDTO;
 import projeto.collendar.enums.TipoPermissao;
-import projeto.collendar.model.Calendario;
-import projeto.collendar.model.Compartilhamento;
-import projeto.collendar.model.Usuario;
+import projeto.collendar.exception.AccessDeniedException;
+import projeto.collendar.service.CalendarioService;
 import projeto.collendar.service.CompartilhamentoService;
+import projeto.collendar.utils.SecurityUtils;
 
+import java.time.LocalDateTime;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -30,392 +31,83 @@ class CompartilhamentoControllerTest {
     @Mock
     private CompartilhamentoService compartilhamentoService;
 
+    @Mock
+    private CalendarioService calendarioService;
+
+    @Mock
+    private SecurityUtils securityUtils;
+
     @InjectMocks
     private CompartilhamentoController compartilhamentoController;
 
     @Nested
-    class Dado_um_compartilhamento_valido {
+    class Dado_uma_requisicao_para_compartilhar_calendario {
 
-        Compartilhamento compartilhamento;
-        Calendario calendario;
-        Usuario dono;
-        Usuario usuarioCompartilhado;
-        UUID compartilhamentoId;
+        CompartilhamentoRequestDTO dto;
         UUID calendarioId;
-        UUID usuarioCompartilhadoId;
+        UUID usuarioId;
 
         @BeforeEach
         void setup() {
-            compartilhamentoId = UUID.randomUUID();
             calendarioId = UUID.randomUUID();
-            usuarioCompartilhadoId = UUID.randomUUID();
+            usuarioId = UUID.randomUUID();
 
-            dono = new Usuario();
-            dono.setId(UUID.randomUUID());
-            dono.setNome("João Silva");
-
-            usuarioCompartilhado = new Usuario();
-            usuarioCompartilhado.setId(usuarioCompartilhadoId);
-            usuarioCompartilhado.setNome("Maria Santos");
-
-            calendario = new Calendario();
-            calendario.setId(calendarioId);
-            calendario.setNome("Trabalho");
-            calendario.setUsuario(dono);
-
-            compartilhamento = new Compartilhamento();
-            compartilhamento.setId(compartilhamentoId);
-            compartilhamento.setCalendario(calendario);
-            compartilhamento.setUsuario(usuarioCompartilhado);
-            compartilhamento.setPermissao(TipoPermissao.VISUALIZAR);
+            dto = new CompartilhamentoRequestDTO(
+                    calendarioId,
+                    "maria@email.com",
+                    TipoPermissao.VISUALIZAR
+            );
         }
 
         @Nested
-        class Quando_compartilhar_calendario {
-
-            ResponseEntity<CompartilhamentoDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(compartilhamentoService.compartilhar(calendarioId, usuarioCompartilhadoId, TipoPermissao.VISUALIZAR))
-                        .thenReturn(compartilhamento);
-                resposta = compartilhamentoController.compartilhar(calendarioId, usuarioCompartilhadoId, TipoPermissao.VISUALIZAR);
-            }
+        class Quando_usuario_eh_proprietario {
 
             @Test
-            void deve_retornar_status_created() {
+            void deve_compartilhar_calendario_com_sucesso() {
+                CompartilhamentoResponseDTO compartilhamentoResponse = new CompartilhamentoResponseDTO(
+                        UUID.randomUUID(),
+                        calendarioId,
+                        "Trabalho",
+                        UUID.randomUUID(),
+                        "Maria Santos",
+                        "maria@email.com",
+                        TipoPermissao.VISUALIZAR,
+                        LocalDateTime.now()
+                );
+
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(true);
+                when(compartilhamentoService.create(any(CompartilhamentoRequestDTO.class)))
+                        .thenReturn(compartilhamentoResponse);
+
+                ResponseEntity<CompartilhamentoResponseDTO> resposta =
+                        compartilhamentoController.create(dto);
+
                 assertEquals(HttpStatus.CREATED, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_compartilhamento_criado() {
                 assertNotNull(resposta.getBody());
-                assertEquals(TipoPermissao.VISUALIZAR, resposta.getBody().getPermissao());
-                assertEquals("Maria Santos", resposta.getBody().getUsuarioNome());
-            }
-
-            @Test
-            void deve_chamar_service_compartilhar() {
-                verify(compartilhamentoService, times(1))
-                        .compartilhar(calendarioId, usuarioCompartilhadoId, TipoPermissao.VISUALIZAR);
+                assertEquals("maria@email.com", resposta.getBody().usuarioEmail());
+                assertEquals(TipoPermissao.VISUALIZAR, resposta.getBody().permissao());
+                verify(compartilhamentoService).create(any(CompartilhamentoRequestDTO.class));
             }
         }
 
         @Nested
-        class Quando_buscar_por_id {
-
-            ResponseEntity<CompartilhamentoDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(compartilhamentoService.buscarPorId(compartilhamentoId)).thenReturn(Optional.of(compartilhamento));
-                resposta = compartilhamentoController.buscarPorId(compartilhamentoId);
-            }
+        class Quando_usuario_nao_eh_proprietario {
 
             @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
+            void deve_lancar_access_denied_exception() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(false);
 
-            @Test
-            void deve_retornar_compartilhamento_encontrado() {
-                assertNotNull(resposta.getBody());
-                assertEquals(TipoPermissao.VISUALIZAR, resposta.getBody().getPermissao());
-            }
-        }
-
-        @Nested
-        class Quando_listar_por_calendario {
-
-            ResponseEntity<List<CompartilhamentoDTO>> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(compartilhamentoService.listarPorCalendario(calendarioId))
-                        .thenReturn(Arrays.asList(compartilhamento));
-                resposta = compartilhamentoController.listarPorCalendario(calendarioId);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_compartilhamentos_do_calendario() {
-                assertNotNull(resposta.getBody());
-                assertEquals(1, resposta.getBody().size());
-            }
-        }
-
-        @Nested
-        class Quando_listar_calendarios_compartilhados {
-
-            ResponseEntity<List<CalendarioDTO>> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(compartilhamentoService.listarCalendariosCompartilhados(usuarioCompartilhadoId))
-                        .thenReturn(Arrays.asList(calendario));
-                resposta = compartilhamentoController.listarCalendariosCompartilhados(usuarioCompartilhadoId);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_calendarios_compartilhados() {
-                assertNotNull(resposta.getBody());
-                assertEquals(1, resposta.getBody().size());
-                assertEquals("Trabalho", resposta.getBody().get(0).getNome());
-            }
-        }
-
-        @Nested
-        class Quando_listar_compartilhamentos_recebidos {
-
-            ResponseEntity<List<CompartilhamentoDTO>> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(compartilhamentoService.listarCompartilhamentosRecebidos(usuarioCompartilhadoId))
-                        .thenReturn(Arrays.asList(compartilhamento));
-                resposta = compartilhamentoController.listarCompartilhamentosRecebidos(usuarioCompartilhadoId);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_compartilhamentos_recebidos() {
-                assertNotNull(resposta.getBody());
-                assertEquals(1, resposta.getBody().size());
-            }
-        }
-
-        @Nested
-        class Quando_buscar_compartilhamento_especifico {
-
-            ResponseEntity<CompartilhamentoDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(compartilhamentoService.buscarCompartilhamento(calendarioId, usuarioCompartilhadoId))
-                        .thenReturn(Optional.of(compartilhamento));
-                resposta = compartilhamentoController.buscarCompartilhamento(calendarioId, usuarioCompartilhadoId);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_compartilhamento_encontrado() {
-                assertNotNull(resposta.getBody());
-            }
-        }
-
-        @Nested
-        class Quando_atualizar_permissao {
-
-            ResponseEntity<CompartilhamentoDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                compartilhamento.setPermissao(TipoPermissao.EDITAR);
-                when(compartilhamentoService.atualizarPermissao(compartilhamentoId, TipoPermissao.EDITAR))
-                        .thenReturn(compartilhamento);
-                resposta = compartilhamentoController.atualizarPermissao(compartilhamentoId, TipoPermissao.EDITAR);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_permissao_atualizada() {
-                assertNotNull(resposta.getBody());
-                assertEquals(TipoPermissao.EDITAR, resposta.getBody().getPermissao());
-            }
-
-            @Test
-            void deve_chamar_service_atualizar_permissao() {
-                verify(compartilhamentoService, times(1))
-                        .atualizarPermissao(compartilhamentoId, TipoPermissao.EDITAR);
-            }
-        }
-
-        @Nested
-        class Quando_remover_compartilhamento {
-
-            ResponseEntity<Void> resposta;
-
-            @BeforeEach
-            void setup() {
-                doNothing().when(compartilhamentoService).removerCompartilhamento(calendarioId, usuarioCompartilhadoId);
-                resposta = compartilhamentoController.removerCompartilhamento(calendarioId, usuarioCompartilhadoId);
-            }
-
-            @Test
-            void deve_retornar_status_no_content() {
-                assertEquals(HttpStatus.NO_CONTENT, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_chamar_service_remover() {
-                verify(compartilhamentoService, times(1))
-                        .removerCompartilhamento(calendarioId, usuarioCompartilhadoId);
-            }
-        }
-
-        @Nested
-        class Quando_deletar_compartilhamento {
-
-            ResponseEntity<Void> resposta;
-
-            @BeforeEach
-            void setup() {
-                doNothing().when(compartilhamentoService).deletar(compartilhamentoId);
-                resposta = compartilhamentoController.deletar(compartilhamentoId);
-            }
-
-            @Test
-            void deve_retornar_status_no_content() {
-                assertEquals(HttpStatus.NO_CONTENT, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_chamar_service_deletar() {
-                verify(compartilhamentoService, times(1)).deletar(compartilhamentoId);
-            }
-        }
-
-        @Nested
-        class Quando_verificar_acesso {
-
-            ResponseEntity<Boolean> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(compartilhamentoService.temAcesso(calendarioId, usuarioCompartilhadoId)).thenReturn(true);
-                resposta = compartilhamentoController.temAcesso(calendarioId, usuarioCompartilhadoId);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_true_quando_tem_acesso() {
-                assertTrue(resposta.getBody());
-            }
-        }
-
-        @Nested
-        class Quando_verificar_permissao_edicao {
-
-            ResponseEntity<Boolean> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(compartilhamentoService.podeEditar(calendarioId, usuarioCompartilhadoId)).thenReturn(true);
-                resposta = compartilhamentoController.podeEditar(calendarioId, usuarioCompartilhadoId);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_true_quando_pode_editar() {
-                assertTrue(resposta.getBody());
-            }
-        }
-
-        @Nested
-        class Quando_contar_por_calendario {
-
-            ResponseEntity<Long> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(compartilhamentoService.contarPorCalendario(calendarioId)).thenReturn(3L);
-                resposta = compartilhamentoController.contarPorCalendario(calendarioId);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_quantidade_correta() {
-                assertEquals(3L, resposta.getBody());
+                assertThrows(AccessDeniedException.class,
+                        () -> compartilhamentoController.create(dto));
+                verify(compartilhamentoService, never()).create(any());
             }
         }
     }
 
     @Nested
-    class Dado_um_compartilhamento_inexistente {
-
-        UUID compartilhamentoId;
-
-        @BeforeEach
-        void setup() {
-            compartilhamentoId = UUID.randomUUID();
-        }
-
-        @Nested
-        class Quando_buscar_por_id {
-
-            ResponseEntity<CompartilhamentoDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(compartilhamentoService.buscarPorId(compartilhamentoId)).thenReturn(Optional.empty());
-                resposta = compartilhamentoController.buscarPorId(compartilhamentoId);
-            }
-
-            @Test
-            void deve_retornar_status_not_found() {
-                assertEquals(HttpStatus.NOT_FOUND, resposta.getStatusCode());
-            }
-
-            @Test
-            void nao_deve_retornar_corpo() {
-                assertNull(resposta.getBody());
-            }
-        }
-
-        @Nested
-        class Quando_deletar_compartilhamento {
-
-            ResponseEntity<Void> resposta;
-
-            @BeforeEach
-            void setup() {
-                doThrow(new IllegalArgumentException("Compartilhamento não encontrado"))
-                        .when(compartilhamentoService).deletar(compartilhamentoId);
-                resposta = compartilhamentoController.deletar(compartilhamentoId);
-            }
-
-            @Test
-            void deve_retornar_status_not_found() {
-                assertEquals(HttpStatus.NOT_FOUND, resposta.getStatusCode());
-            }
-        }
-    }
-
-    @Nested
-    class Dado_um_calendario_ja_compartilhado {
+    class Dado_uma_requisicao_para_listar_compartilhamentos_do_calendario {
 
         UUID calendarioId;
         UUID usuarioId;
@@ -427,51 +119,368 @@ class CompartilhamentoControllerTest {
         }
 
         @Nested
-        class Quando_tentar_compartilhar_novamente {
-
-            ResponseEntity<CompartilhamentoDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(compartilhamentoService.compartilhar(calendarioId, usuarioId, TipoPermissao.VISUALIZAR))
-                        .thenThrow(new IllegalArgumentException("Calendário já compartilhado com este usuário"));
-                resposta = compartilhamentoController.compartilhar(calendarioId, usuarioId, TipoPermissao.VISUALIZAR);
-            }
+        class Quando_usuario_eh_proprietario {
 
             @Test
-            void deve_retornar_status_bad_request() {
-                assertEquals(HttpStatus.BAD_REQUEST, resposta.getStatusCode());
+            void deve_retornar_lista_de_compartilhamentos() {
+                List<CompartilhamentoResponseDTO> compartilhamentos = Arrays.asList(
+                        new CompartilhamentoResponseDTO(
+                                UUID.randomUUID(),
+                                calendarioId,
+                                "Trabalho",
+                                UUID.randomUUID(),
+                                "Maria Santos",
+                                "maria@email.com",
+                                TipoPermissao.VISUALIZAR,
+                                LocalDateTime.now()
+                        ),
+                        new CompartilhamentoResponseDTO(
+                                UUID.randomUUID(),
+                                calendarioId,
+                                "Trabalho",
+                                UUID.randomUUID(),
+                                "Pedro Oliveira",
+                                "pedro@email.com",
+                                TipoPermissao.EDITAR,
+                                LocalDateTime.now()
+                        )
+                );
+
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(true);
+                when(compartilhamentoService.listByCalendario(calendarioId))
+                        .thenReturn(compartilhamentos);
+
+                ResponseEntity<List<CompartilhamentoResponseDTO>> resposta =
+                        compartilhamentoController.listByCalendario(calendarioId);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertEquals(2, resposta.getBody().size());
+            }
+        }
+
+        @Nested
+        class Quando_usuario_nao_eh_proprietario {
+
+            @Test
+            void deve_lancar_access_denied_exception() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(false);
+
+                assertThrows(AccessDeniedException.class,
+                        () -> compartilhamentoController.listByCalendario(calendarioId));
+                verify(compartilhamentoService, never()).listByCalendario(calendarioId);
             }
         }
     }
 
     @Nested
-    class Dado_compartilhamento_com_proprietario {
+    class Dado_uma_requisicao_para_listar_calendarios_compartilhados_comigo {
+
+        UUID usuarioId;
+
+        @BeforeEach
+        void setup() {
+            usuarioId = UUID.randomUUID();
+        }
+
+        @Nested
+        class Quando_listar_calendarios_recebidos {
+
+            @Test
+            void deve_retornar_calendarios_compartilhados() {
+                List<CalendarioResponseDTO> calendarios = Arrays.asList(
+                        new CalendarioResponseDTO(
+                                UUID.randomUUID(),
+                                "Trabalho Compartilhado",
+                                "Descrição",
+                                "#FF5733",
+                                UUID.randomUUID(),
+                                "João Silva",
+                                LocalDateTime.now(),
+                                LocalDateTime.now(),
+                                false,
+                                TipoPermissao.VISUALIZAR
+                        )
+                );
+
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(compartilhamentoService.listSharedWithUsuario(usuarioId))
+                        .thenReturn(calendarios);
+
+                ResponseEntity<List<CalendarioResponseDTO>> resposta =
+                        compartilhamentoController.listRecebidos();
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertEquals(1, resposta.getBody().size());
+                assertFalse(resposta.getBody().get(0).proprietario());
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_listar_detalhes_compartilhamentos_recebidos {
+
+        UUID usuarioId;
+
+        @BeforeEach
+        void setup() {
+            usuarioId = UUID.randomUUID();
+        }
+
+        @Nested
+        class Quando_listar_detalhes {
+
+            @Test
+            void deve_retornar_detalhes_dos_compartilhamentos() {
+                List<CompartilhamentoResponseDTO> compartilhamentos = Arrays.asList(
+                        new CompartilhamentoResponseDTO(
+                                UUID.randomUUID(),
+                                UUID.randomUUID(),
+                                "Trabalho",
+                                usuarioId,
+                                "Maria Santos",
+                                "maria@email.com",
+                                TipoPermissao.VISUALIZAR,
+                                LocalDateTime.now()
+                        )
+                );
+
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(compartilhamentoService.listReceivedByUsuario(usuarioId))
+                        .thenReturn(compartilhamentos);
+
+                ResponseEntity<List<CompartilhamentoResponseDTO>> resposta =
+                        compartilhamentoController.listRecebidosDetalhes();
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertEquals(1, resposta.getBody().size());
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_obter_minha_permissao {
 
         UUID calendarioId;
-        UUID donoId;
+        UUID usuarioId;
 
         @BeforeEach
         void setup() {
             calendarioId = UUID.randomUUID();
-            donoId = UUID.randomUUID();
+            usuarioId = UUID.randomUUID();
         }
 
         @Nested
-        class Quando_tentar_compartilhar_consigo_mesmo {
-
-            ResponseEntity<CompartilhamentoDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(compartilhamentoService.compartilhar(calendarioId, donoId, TipoPermissao.VISUALIZAR))
-                        .thenThrow(new IllegalArgumentException("Não é possível compartilhar o calendário consigo mesmo"));
-                resposta = compartilhamentoController.compartilhar(calendarioId, donoId, TipoPermissao.VISUALIZAR);
-            }
+        class Quando_obter_permissao {
 
             @Test
-            void deve_retornar_status_bad_request() {
-                assertEquals(HttpStatus.BAD_REQUEST, resposta.getStatusCode());
+            void deve_retornar_permissao_do_usuario() {
+                PermissaoResponseDTO permissao = new PermissaoResponseDTO(
+                        false,
+                        true,
+                        false,
+                        TipoPermissao.VISUALIZAR
+                );
+
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(compartilhamentoService.getMyPermission(calendarioId, usuarioId))
+                        .thenReturn(permissao);
+
+                ResponseEntity<PermissaoResponseDTO> resposta =
+                        compartilhamentoController.getMyPermission(calendarioId);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertFalse(resposta.getBody().proprietario());
+                assertTrue(resposta.getBody().podeVisualizar());
+                assertFalse(resposta.getBody().podeEditar());
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_atualizar_permissao {
+
+        UUID compartilhamentoId;
+        UUID calendarioId;
+        UUID usuarioId;
+
+        @BeforeEach
+        void setup() {
+            compartilhamentoId = UUID.randomUUID();
+            calendarioId = UUID.randomUUID();
+            usuarioId = UUID.randomUUID();
+        }
+
+        @Nested
+        class Quando_usuario_eh_proprietario {
+
+            @Test
+            void deve_atualizar_permissao_com_sucesso() {
+                CompartilhamentoResponseDTO compartilhamentoAtualizado = new CompartilhamentoResponseDTO(
+                        compartilhamentoId,
+                        calendarioId,
+                        "Trabalho",
+                        UUID.randomUUID(),
+                        "Maria Santos",
+                        "maria@email.com",
+                        TipoPermissao.EDITAR,
+                        LocalDateTime.now()
+                );
+
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(compartilhamentoService.getCalendarioIdByCompartilhamento(compartilhamentoId))
+                        .thenReturn(calendarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(true);
+                when(compartilhamentoService.updatePermissao(compartilhamentoId, TipoPermissao.EDITAR))
+                        .thenReturn(compartilhamentoAtualizado);
+
+                ResponseEntity<CompartilhamentoResponseDTO> resposta =
+                        compartilhamentoController.updatePermissao(compartilhamentoId, TipoPermissao.EDITAR);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertEquals(TipoPermissao.EDITAR, resposta.getBody().permissao());
+            }
+        }
+
+        @Nested
+        class Quando_usuario_nao_eh_proprietario {
+
+            @Test
+            void deve_lancar_access_denied_exception() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(compartilhamentoService.getCalendarioIdByCompartilhamento(compartilhamentoId))
+                        .thenReturn(calendarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(false);
+
+                assertThrows(AccessDeniedException.class,
+                        () -> compartilhamentoController.updatePermissao(compartilhamentoId, TipoPermissao.EDITAR));
+                verify(compartilhamentoService, never()).updatePermissao(any(), any());
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_remover_compartilhamento {
+
+        UUID compartilhamentoId;
+        UUID calendarioId;
+        UUID usuarioId;
+        UUID destinatarioId;
+
+        @BeforeEach
+        void setup() {
+            compartilhamentoId = UUID.randomUUID();
+            calendarioId = UUID.randomUUID();
+            usuarioId = UUID.randomUUID();
+            destinatarioId = UUID.randomUUID();
+        }
+
+        @Nested
+        class Quando_usuario_eh_proprietario {
+
+            @Test
+            void deve_remover_compartilhamento_com_sucesso() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(compartilhamentoService.getCalendarioIdByCompartilhamento(compartilhamentoId))
+                        .thenReturn(calendarioId);
+                when(compartilhamentoService.getDestinatarioIdByCompartilhamento(compartilhamentoId))
+                        .thenReturn(destinatarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(true);
+                doNothing().when(compartilhamentoService).delete(compartilhamentoId);
+
+                ResponseEntity<Void> resposta = compartilhamentoController.delete(compartilhamentoId);
+
+                assertEquals(HttpStatus.NO_CONTENT, resposta.getStatusCode());
+                verify(compartilhamentoService).delete(compartilhamentoId);
+            }
+        }
+
+        @Nested
+        class Quando_usuario_eh_destinatario {
+
+            @Test
+            void deve_remover_compartilhamento_com_sucesso() {
+                when(securityUtils.getLoggedUserId()).thenReturn(destinatarioId);
+                when(compartilhamentoService.getCalendarioIdByCompartilhamento(compartilhamentoId))
+                        .thenReturn(calendarioId);
+                when(compartilhamentoService.getDestinatarioIdByCompartilhamento(compartilhamentoId))
+                        .thenReturn(destinatarioId);
+                when(calendarioService.isOwner(calendarioId, destinatarioId)).thenReturn(false);
+                doNothing().when(compartilhamentoService).delete(compartilhamentoId);
+
+                ResponseEntity<Void> resposta = compartilhamentoController.delete(compartilhamentoId);
+
+                assertEquals(HttpStatus.NO_CONTENT, resposta.getStatusCode());
+                verify(compartilhamentoService).delete(compartilhamentoId);
+            }
+        }
+
+        @Nested
+        class Quando_usuario_nao_tem_permissao {
+
+            @Test
+            void deve_lancar_access_denied_exception() {
+                UUID outroUsuarioId = UUID.randomUUID();
+
+                when(securityUtils.getLoggedUserId()).thenReturn(outroUsuarioId);
+                when(compartilhamentoService.getCalendarioIdByCompartilhamento(compartilhamentoId))
+                        .thenReturn(calendarioId);
+                when(compartilhamentoService.getDestinatarioIdByCompartilhamento(compartilhamentoId))
+                        .thenReturn(destinatarioId);
+                when(calendarioService.isOwner(calendarioId, outroUsuarioId)).thenReturn(false);
+
+                assertThrows(AccessDeniedException.class,
+                        () -> compartilhamentoController.delete(compartilhamentoId));
+                verify(compartilhamentoService, never()).delete(compartilhamentoId);
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_contar_compartilhamentos {
+
+        UUID calendarioId;
+        UUID usuarioId;
+
+        @BeforeEach
+        void setup() {
+            calendarioId = UUID.randomUUID();
+            usuarioId = UUID.randomUUID();
+        }
+
+        @Nested
+        class Quando_usuario_eh_proprietario {
+
+            @Test
+            void deve_retornar_quantidade_de_compartilhamentos() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(true);
+                when(compartilhamentoService.countByCalendario(calendarioId)).thenReturn(3L);
+
+                ResponseEntity<Long> resposta =
+                        compartilhamentoController.countByCalendario(calendarioId);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertEquals(3L, resposta.getBody());
+            }
+        }
+
+        @Nested
+        class Quando_usuario_nao_eh_proprietario {
+
+            @Test
+            void deve_lancar_access_denied_exception() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(false);
+
+                assertThrows(AccessDeniedException.class,
+                        () -> compartilhamentoController.countByCalendario(calendarioId));
             }
         }
     }

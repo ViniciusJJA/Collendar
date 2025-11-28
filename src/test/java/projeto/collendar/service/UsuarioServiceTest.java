@@ -5,6 +5,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import projeto.collendar.dtos.request.UsuarioRequestDTO;
+import projeto.collendar.dtos.response.UsuarioResponseDTO;
+import projeto.collendar.exception.BusinessException;
+import projeto.collendar.exception.ResourceNotFoundException;
 import projeto.collendar.model.Role;
 import projeto.collendar.model.Usuario;
 import projeto.collendar.repository.RoleRepository;
@@ -26,237 +31,324 @@ class UsuarioServiceTest {
     @Mock
     private RoleRepository roleRepository;
 
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
     @InjectMocks
     private UsuarioService usuarioService;
 
     @Nested
-    class Dado_um_usuario_valido {
+    class Dado_um_usuario_valido_para_criar {
+
+        UsuarioRequestDTO dto;
+        Role roleUser;
+        Role roleAdmin;
+
+        @BeforeEach
+        void setup() {
+            dto = new UsuarioRequestDTO(
+                    "João Silva",
+                    "joao@email.com",
+                    "senha123"
+            );
+
+            roleUser = new Role();
+            roleUser.setId(UUID.randomUUID());
+            roleUser.setNome("USER");
+
+            roleAdmin = new Role();
+            roleAdmin.setId(UUID.randomUUID());
+            roleAdmin.setNome("ADMIN");
+        }
+
+        @Nested
+        class Quando_criar_usuario {
+
+            UsuarioResponseDTO resultado;
+
+            @BeforeEach
+            void setup() {
+                when(usuarioRepository.existsByEmail(dto.email())).thenReturn(false);
+                when(passwordEncoder.encode(dto.senha())).thenReturn("senhaEncriptada");
+                when(roleRepository.findByNome("USER")).thenReturn(Optional.of(roleUser));
+                when(roleRepository.findByNome("ADMIN")).thenReturn(Optional.of(roleAdmin));
+                when(usuarioRepository.save(any(Usuario.class))).thenAnswer(invocation -> {
+                    Usuario usuario = invocation.getArgument(0);
+                    usuario.setId(UUID.randomUUID());
+                    return usuario;
+                });
+
+                resultado = usuarioService.create(dto);
+            }
+
+            @Test
+            void deve_retornar_usuario_criado_com_sucesso() {
+                assertNotNull(resultado);
+                assertEquals("João Silva", resultado.nome());
+                assertEquals("joao@email.com", resultado.email());
+                assertTrue(resultado.ativo());
+            }
+
+            @Test
+            void deve_adicionar_roles_user_e_admin() {
+                assertNotNull(resultado.roles());
+                assertEquals(2, resultado.roles().size());
+                assertTrue(resultado.roles().contains("USER"));
+                assertTrue(resultado.roles().contains("ADMIN"));
+            }
+
+            @Test
+            void deve_encriptar_senha() {
+                verify(passwordEncoder).encode("senha123");
+            }
+
+            @Test
+            void deve_salvar_usuario_no_repositorio() {
+                verify(usuarioRepository).save(any(Usuario.class));
+            }
+        }
+
+        @Nested
+        class Quando_email_ja_existe {
+
+            @BeforeEach
+            void setup() {
+                when(usuarioRepository.existsByEmail(dto.email())).thenReturn(true);
+            }
+
+            @Test
+            void deve_lancar_business_exception() {
+                BusinessException exception = assertThrows(
+                        BusinessException.class,
+                        () -> usuarioService.create(dto)
+                );
+
+                assertEquals("Email já cadastrado", exception.getMessage());
+            }
+
+            @Test
+            void nao_deve_salvar_usuario() {
+                assertThrows(BusinessException.class, () -> usuarioService.create(dto));
+                verify(usuarioRepository, never()).save(any());
+            }
+        }
+
+        @Nested
+        class Quando_role_user_nao_existe {
+
+            @BeforeEach
+            void setup() {
+                when(usuarioRepository.existsByEmail(dto.email())).thenReturn(false);
+                when(roleRepository.findByNome("USER")).thenReturn(Optional.empty());
+            }
+
+            @Test
+            void deve_lancar_resource_not_found_exception() {
+                ResourceNotFoundException exception = assertThrows(
+                        ResourceNotFoundException.class,
+                        () -> usuarioService.create(dto)
+                );
+
+                assertEquals("Role não encontrado: USER", exception.getMessage());
+            }
+        }
+
+        @Nested
+        class Quando_role_admin_nao_existe {
+
+            @BeforeEach
+            void setup() {
+                when(usuarioRepository.existsByEmail(dto.email())).thenReturn(false);
+                when(roleRepository.findByNome("USER")).thenReturn(Optional.of(roleUser));
+                when(roleRepository.findByNome("ADMIN")).thenReturn(Optional.empty());
+            }
+
+            @Test
+            void deve_lancar_resource_not_found_exception() {
+                ResourceNotFoundException exception = assertThrows(
+                        ResourceNotFoundException.class,
+                        () -> usuarioService.create(dto)
+                );
+
+                assertEquals("Role não encontrado: ADMIN", exception.getMessage());
+            }
+        }
+    }
+
+    @Nested
+    class Dado_um_usuario_existente {
 
         Usuario usuario;
-        Role roleUser;
         UUID usuarioId;
 
         @BeforeEach
         void setup() {
             usuarioId = UUID.randomUUID();
 
-            roleUser = new Role();
-            roleUser.setId(UUID.randomUUID());
-            roleUser.setNome("ROLE_USER");
-
             usuario = new Usuario();
             usuario.setId(usuarioId);
             usuario.setNome("João Silva");
             usuario.setEmail("joao@email.com");
-            usuario.setSenha("senha123");
+            usuario.setSenha("senhaEncriptada");
             usuario.setAtivo(true);
             usuario.setRoles(new HashSet<>());
         }
 
         @Nested
-        class Quando_criar_usuario {
+        class Quando_buscar_por_id {
+
+            UsuarioResponseDTO resultado;
 
             @BeforeEach
             void setup() {
-                when(usuarioRepository.existsByEmail(usuario.getEmail())).thenReturn(false);
-                when(roleRepository.findByNome("ROLE_USER")).thenReturn(Optional.of(roleUser));
-                when(usuarioRepository.save(any(Usuario.class))).thenReturn(usuario);
-            }
-
-            @Test
-            void deve_criar_usuario_com_sucesso() {
-                Usuario resultado = usuarioService.criar(usuario);
-
-                assertNotNull(resultado);
-                assertEquals("João Silva", resultado.getNome());
-                assertEquals("joao@email.com", resultado.getEmail());
-                verify(usuarioRepository).save(any(Usuario.class));
-            }
-
-            @Test
-            void deve_adicionar_role_user_automaticamente() {
-                Usuario resultado = usuarioService.criar(usuario);
-
-                verify(roleRepository).findByNome("ROLE_USER");
-                verify(usuarioRepository).save(any(Usuario.class));
-            }
-        }
-
-        @Nested
-        class Quando_criar_usuario_com_email_duplicado {
-
-            @BeforeEach
-            void setup() {
-                when(usuarioRepository.existsByEmail(usuario.getEmail())).thenReturn(true);
-            }
-
-            @Test
-            void deve_lancar_excecao() {
-                IllegalArgumentException exception = assertThrows(
-                        IllegalArgumentException.class,
-                        () -> usuarioService.criar(usuario)
-                );
-
-                assertEquals("Email já cadastrado", exception.getMessage());
-                verify(usuarioRepository, never()).save(any());
-            }
-        }
-
-        @Nested
-        class Quando_role_nao_encontrada {
-
-            @BeforeEach
-            void setup() {
-                when(usuarioRepository.existsByEmail(usuario.getEmail())).thenReturn(false);
-                when(roleRepository.findByNome("ROLE_USER")).thenReturn(Optional.empty());
-            }
-
-            @Test
-            void deve_lancar_excecao() {
-                RuntimeException exception = assertThrows(
-                        RuntimeException.class,
-                        () -> usuarioService.criar(usuario)
-                );
-
-                assertEquals("Role ROLE_USER não encontrada", exception.getMessage());
-            }
-        }
-
-        @Nested
-        class Quando_buscar_usuario_por_id {
-
-            @Test
-            void deve_retornar_usuario_quando_existir() {
                 when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
-
-                Optional<Usuario> resultado = usuarioService.buscarPorId(usuarioId);
-
-                assertTrue(resultado.isPresent());
-                assertEquals("João Silva", resultado.get().getNome());
+                resultado = usuarioService.findById(usuarioId);
             }
 
             @Test
-            void deve_retornar_vazio_quando_nao_existir() {
+            void deve_retornar_usuario_encontrado() {
+                assertNotNull(resultado);
+                assertEquals("João Silva", resultado.nome());
+                assertEquals("joao@email.com", resultado.email());
+            }
+        }
+
+        @Nested
+        class Quando_buscar_por_id_inexistente {
+
+            @BeforeEach
+            void setup() {
                 when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.empty());
+            }
 
-                Optional<Usuario> resultado = usuarioService.buscarPorId(usuarioId);
+            @Test
+            void deve_lancar_resource_not_found_exception() {
+                ResourceNotFoundException exception = assertThrows(
+                        ResourceNotFoundException.class,
+                        () -> usuarioService.findById(usuarioId)
+                );
 
-                assertFalse(resultado.isPresent());
+                assertTrue(exception.getMessage().contains("Usuário não encontrado"));
             }
         }
 
         @Nested
-        class Quando_buscar_usuario_por_email {
+        class Quando_buscar_por_email {
 
-            @Test
-            void deve_retornar_usuario_quando_existir() {
+            UsuarioResponseDTO resultado;
+
+            @BeforeEach
+            void setup() {
                 when(usuarioRepository.findByEmail(usuario.getEmail())).thenReturn(Optional.of(usuario));
+                resultado = usuarioService.findByEmail(usuario.getEmail());
+            }
 
-                Optional<Usuario> resultado = usuarioService.buscarPorEmail(usuario.getEmail());
-
-                assertTrue(resultado.isPresent());
-                assertEquals("joao@email.com", resultado.get().getEmail());
+            @Test
+            void deve_retornar_usuario_encontrado() {
+                assertNotNull(resultado);
+                assertEquals("joao@email.com", resultado.email());
             }
         }
 
         @Nested
-        class Quando_listar_usuarios {
+        class Quando_listar_todos_usuarios {
+
+            List<UsuarioResponseDTO> resultado;
+
+            @BeforeEach
+            void setup() {
+                Usuario usuario2 = new Usuario();
+                usuario2.setId(UUID.randomUUID());
+                usuario2.setNome("Maria Santos");
+                usuario2.setEmail("maria@email.com");
+                usuario2.setRoles(new HashSet<>());
+
+                when(usuarioRepository.findAll()).thenReturn(Arrays.asList(usuario, usuario2));
+                resultado = usuarioService.listAll();
+            }
 
             @Test
-            void deve_listar_todos_usuarios() {
-                List<Usuario> usuarios = Arrays.asList(usuario, new Usuario());
-                when(usuarioRepository.findAll()).thenReturn(usuarios);
-
-                List<Usuario> resultado = usuarioService.listarTodos();
-
+            void deve_retornar_lista_com_todos_usuarios() {
+                assertNotNull(resultado);
                 assertEquals(2, resultado.size());
             }
+        }
+
+        @Nested
+        class Quando_listar_usuarios_ativos {
+
+            List<UsuarioResponseDTO> resultado;
+
+            @BeforeEach
+            void setup() {
+                when(usuarioRepository.findByAtivo(true)).thenReturn(Arrays.asList(usuario));
+                resultado = usuarioService.listAtivos();
+            }
 
             @Test
-            void deve_listar_apenas_usuarios_ativos() {
-                List<Usuario> usuarios = Arrays.asList(usuario);
-                when(usuarioRepository.findByAtivo(true)).thenReturn(usuarios);
-
-                List<Usuario> resultado = usuarioService.listarAtivos();
-
+            void deve_retornar_apenas_usuarios_ativos() {
+                assertNotNull(resultado);
                 assertEquals(1, resultado.size());
-                assertTrue(resultado.get(0).getAtivo());
+                assertTrue(resultado.get(0).ativo());
             }
         }
 
         @Nested
         class Quando_atualizar_usuario {
 
-            Usuario usuarioAtualizado;
+            UsuarioRequestDTO dtoAtualizado;
+            UsuarioResponseDTO resultado;
 
             @BeforeEach
             void setup() {
-                usuarioAtualizado = new Usuario();
-                usuarioAtualizado.setNome("João Updated");
-                usuarioAtualizado.setEmail("joao@email.com");
-                usuarioAtualizado.setSenha("novaSenha");
+                dtoAtualizado = new UsuarioRequestDTO(
+                        "João Silva Atualizado",
+                        "joao@email.com",
+                        "novaSenha123"
+                );
 
                 when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
+                when(usuarioRepository.existsByEmail(dtoAtualizado.email())).thenReturn(false);
+                when(passwordEncoder.encode(dtoAtualizado.senha())).thenReturn("novaSenhaEncriptada");
                 when(usuarioRepository.save(any(Usuario.class))).thenReturn(usuario);
+
+                resultado = usuarioService.update(usuarioId, dtoAtualizado);
             }
 
             @Test
             void deve_atualizar_usuario_com_sucesso() {
-                Usuario resultado = usuarioService.atualizar(usuarioId, usuarioAtualizado);
-
                 assertNotNull(resultado);
                 verify(usuarioRepository).save(any(Usuario.class));
             }
 
             @Test
-            void nao_deve_alterar_senha_quando_vazia() {
-                usuarioAtualizado.setSenha("");
-
-                Usuario resultado = usuarioService.atualizar(usuarioId, usuarioAtualizado);
-
-                assertEquals("senha123", usuario.getSenha());
-            }
-        }
-
-        @Nested
-        class Quando_atualizar_usuario_inexistente {
-
-            @BeforeEach
-            void setup() {
-                when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.empty());
-            }
-
-            @Test
-            void deve_lancar_excecao() {
-                IllegalArgumentException exception = assertThrows(
-                        IllegalArgumentException.class,
-                        () -> usuarioService.atualizar(usuarioId, usuario)
-                );
-
-                assertEquals("Usuário não encontrado", exception.getMessage());
+            void deve_encriptar_nova_senha() {
+                verify(passwordEncoder).encode("novaSenha123");
             }
         }
 
         @Nested
         class Quando_atualizar_com_email_duplicado {
 
+            UsuarioRequestDTO dtoAtualizado;
+
             @BeforeEach
             void setup() {
-                Usuario usuarioAtualizado = new Usuario();
-                usuarioAtualizado.setEmail("outro@email.com");
+                dtoAtualizado = new UsuarioRequestDTO(
+                        "João Silva",
+                        "outro@email.com",
+                        "senha123"
+                );
 
                 when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
                 when(usuarioRepository.existsByEmail("outro@email.com")).thenReturn(true);
             }
 
             @Test
-            void deve_lancar_excecao() {
-                Usuario usuarioAtualizado = new Usuario();
-                usuarioAtualizado.setEmail("outro@email.com");
-
-                IllegalArgumentException exception = assertThrows(
-                        IllegalArgumentException.class,
-                        () -> usuarioService.atualizar(usuarioId, usuarioAtualizado)
+            void deve_lancar_business_exception() {
+                BusinessException exception = assertThrows(
+                        BusinessException.class,
+                        () -> usuarioService.update(usuarioId, dtoAtualizado)
                 );
 
                 assertEquals("Email já cadastrado", exception.getMessage());
@@ -271,92 +363,100 @@ class UsuarioServiceTest {
                 when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
                 when(usuarioRepository.save(any(Usuario.class))).thenReturn(usuario);
 
-                usuarioService.desativar(usuarioId);
+                usuarioService.deactivate(usuarioId);
             }
 
             @Test
             void deve_desativar_usuario() {
-                verify(usuarioRepository).findById(usuarioId);
-                verify(usuarioRepository).save(any(Usuario.class));
+                assertFalse(usuario.getAtivo());
+            }
+
+            @Test
+            void deve_salvar_usuario_desativado() {
+                verify(usuarioRepository).save(usuario);
             }
         }
 
         @Nested
         class Quando_deletar_usuario {
 
-            @Test
-            void deve_deletar_usuario_existente() {
+            @BeforeEach
+            void setup() {
                 when(usuarioRepository.existsById(usuarioId)).thenReturn(true);
                 doNothing().when(usuarioRepository).deleteById(usuarioId);
 
-                usuarioService.deletar(usuarioId);
-
-                verify(usuarioRepository).deleteById(usuarioId);
+                usuarioService.delete(usuarioId);
             }
 
             @Test
-            void deve_lancar_excecao_quando_usuario_nao_existe() {
-                when(usuarioRepository.existsById(usuarioId)).thenReturn(false);
-
-                IllegalArgumentException exception = assertThrows(
-                        IllegalArgumentException.class,
-                        () -> usuarioService.deletar(usuarioId)
-                );
-
-                assertEquals("Usuário não encontrado", exception.getMessage());
+            void deve_deletar_usuario() {
+                verify(usuarioRepository).deleteById(usuarioId);
             }
         }
 
         @Nested
-        class Quando_gerenciar_roles {
+        class Quando_deletar_usuario_inexistente {
+
+            @BeforeEach
+            void setup() {
+                when(usuarioRepository.existsById(usuarioId)).thenReturn(false);
+            }
+
+            @Test
+            void deve_lancar_resource_not_found_exception() {
+                ResourceNotFoundException exception = assertThrows(
+                        ResourceNotFoundException.class,
+                        () -> usuarioService.delete(usuarioId)
+                );
+
+                assertTrue(exception.getMessage().contains("Usuário não encontrado"));
+            }
+        }
+
+        @Nested
+        class Quando_adicionar_role {
+
+            Role roleAdmin;
+            UsuarioResponseDTO resultado;
+
+            @BeforeEach
+            void setup() {
+                roleAdmin = new Role();
+                roleAdmin.setId(UUID.randomUUID());
+                roleAdmin.setNome("ADMIN");
+
+                when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
+                when(roleRepository.findByNome("ADMIN")).thenReturn(Optional.of(roleAdmin));
+                when(usuarioRepository.save(any(Usuario.class))).thenReturn(usuario);
+
+                resultado = usuarioService.addRole(usuarioId, "ADMIN");
+            }
 
             @Test
             void deve_adicionar_role_ao_usuario() {
-                when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
-                when(roleRepository.findByNome("ROLE_ADMIN")).thenReturn(Optional.of(roleUser));
-                when(usuarioRepository.save(any(Usuario.class))).thenReturn(usuario);
-
-                Usuario resultado = usuarioService.adicionarRole(usuarioId, "ROLE_ADMIN");
-
                 assertNotNull(resultado);
-                verify(usuarioRepository).save(any(Usuario.class));
-            }
-
-            @Test
-            void deve_remover_role_do_usuario() {
-                usuario.getRoles().add(roleUser);
-                when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
-                when(roleRepository.findByNome("ROLE_USER")).thenReturn(Optional.of(roleUser));
-                when(usuarioRepository.save(any(Usuario.class))).thenReturn(usuario);
-
-                Usuario resultado = usuarioService.removerRole(usuarioId, "ROLE_USER");
-
-                assertNotNull(resultado);
-                verify(usuarioRepository).save(any(Usuario.class));
+                verify(usuarioRepository).save(usuario);
             }
         }
 
         @Nested
-        class Quando_verificar_existencia_por_email {
+        class Quando_adicionar_role_inexistente {
 
-            @Test
-            void deve_retornar_true_quando_email_existe() {
-                when(usuarioRepository.existsByEmail("joao@email.com")).thenReturn(true);
-
-                boolean resultado = usuarioService.existePorEmail("joao@email.com");
-
-                assertTrue(resultado);
+            @BeforeEach
+            void setup() {
+                when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.of(usuario));
+                when(roleRepository.findByNome("ROLE_INVALIDA")).thenReturn(Optional.empty());
             }
 
             @Test
-            void deve_retornar_false_quando_email_nao_existe() {
-                when(usuarioRepository.existsByEmail("inexistente@email.com")).thenReturn(false);
+            void deve_lancar_resource_not_found_exception() {
+                ResourceNotFoundException exception = assertThrows(
+                        ResourceNotFoundException.class,
+                        () -> usuarioService.addRole(usuarioId, "ROLE_INVALIDA")
+                );
 
-                boolean resultado = usuarioService.existePorEmail("inexistente@email.com");
-
-                assertFalse(resultado);
+                assertTrue(exception.getMessage().contains("Role não encontrado"));
             }
         }
     }
 }
-//comentario

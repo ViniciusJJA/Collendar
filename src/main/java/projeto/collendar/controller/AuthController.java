@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +29,11 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
-@Tag(name = "Autenticação", description = "Endpoints de autenticação")
+@Tag(
+        name = "Autenticação",
+        description = "Endpoints responsáveis pela autenticação de usuários no sistema. " +
+                "Permite realizar login e obter token JWT para acesso aos recursos protegidos."
+)
 public class AuthController {
 
     private final AuthenticationManager authenticationManager;
@@ -38,19 +43,39 @@ public class AuthController {
 
     @PostMapping("/login")
     @Operation(
-            summary = "Realizar login",
-            description = "Autentica o usuário e retorna token JWT",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Login realizado com sucesso",
-                            content = @Content(schema = @Schema(implementation = LoginResponseDTO.class))),
-                    @ApiResponse(responseCode = "401", description = "Credenciais inválidas")
-            }
+            summary = "Realizar login no sistema",
+            description = "Autentica um usuário com email e senha, retornando um token JWT para acesso aos endpoints protegidos. " +
+                    "O token deve ser incluído no header Authorization como 'Bearer {token}' nas requisições subsequentes.",
+            tags = {"Autenticação"}
     )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Login realizado com sucesso. Retorna o token JWT e informações básicas do usuário.",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = LoginResponseDTO.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Credenciais inválidas. Email ou senha incorretos.",
+                    content = @Content(mediaType = "application/json")
+            ),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Dados de entrada inválidos. Verifique se email e senha foram fornecidos corretamente.",
+                    content = @Content(mediaType = "application/json")
+            )
+    })
     public ResponseEntity<LoginResponseDTO> login(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    description = "Credenciais de login",
+                    description = "Credenciais de login do usuário (email e senha)",
                     required = true,
-                    content = @Content(schema = @Schema(implementation = LoginRequestDTO.class))
+                    content = @Content(
+                            schema = @Schema(implementation = LoginRequestDTO.class),
+                            mediaType = "application/json"
+                    )
             )
             @RequestBody @Valid LoginRequestDTO request) {
         try {

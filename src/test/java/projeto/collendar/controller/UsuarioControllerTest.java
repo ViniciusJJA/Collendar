@@ -1,18 +1,14 @@
 package projeto.collendar.controller;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayNameGeneration;
-import org.junit.jupiter.api.DisplayNameGenerator;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import projeto.collendar.model.Role;
-import projeto.collendar.model.Usuario;
+import projeto.collendar.dtos.request.UsuarioRequestDTO;
+import projeto.collendar.dtos.response.UsuarioResponseDTO;
 import projeto.collendar.service.UsuarioService;
 
 import java.util.*;
@@ -32,198 +28,218 @@ class UsuarioControllerTest {
     private UsuarioController usuarioController;
 
     @Nested
-    class Dado_um_usuario_valido {
+    class Dado_uma_requisicao_para_criar_usuario {
 
-        Usuario usuario;
+        UsuarioRequestDTO dto;
+
+        @BeforeEach
+        void setup() {
+            dto = new UsuarioRequestDTO(
+                    "João Silva",
+                    "joao@email.com",
+                    "senha123"
+            );
+        }
+
+        @Nested
+        class Quando_dados_validos {
+
+            @Test
+            void deve_criar_usuario_com_sucesso() {
+                UsuarioResponseDTO usuarioResponse = new UsuarioResponseDTO(
+                        UUID.randomUUID(),
+                        "João Silva",
+                        "joao@email.com",
+                        true,
+                        Set.of("USER", "ADMIN")
+                );
+
+                when(usuarioService.create(any(UsuarioRequestDTO.class))).thenReturn(usuarioResponse);
+
+                ResponseEntity<UsuarioResponseDTO> resposta = usuarioController.create(dto);
+
+                assertEquals(HttpStatus.CREATED, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertEquals("João Silva", resposta.getBody().nome());
+                assertEquals("joao@email.com", resposta.getBody().email());
+                verify(usuarioService).create(any(UsuarioRequestDTO.class));
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_listar_usuarios {
+
+        @Nested
+        class Quando_listar_todos_usuarios {
+
+            @Test
+            void deve_retornar_lista_de_usuarios() {
+                List<UsuarioResponseDTO> usuarios = Arrays.asList(
+                        new UsuarioResponseDTO(
+                                UUID.randomUUID(),
+                                "João Silva",
+                                "joao@email.com",
+                                true,
+                                Set.of("USER")
+                        ),
+                        new UsuarioResponseDTO(
+                                UUID.randomUUID(),
+                                "Maria Santos",
+                                "maria@email.com",
+                                true,
+                                Set.of("USER")
+                        )
+                );
+
+                when(usuarioService.listAll()).thenReturn(usuarios);
+
+                ResponseEntity<List<UsuarioResponseDTO>> resposta = usuarioController.listAll();
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertEquals(2, resposta.getBody().size());
+            }
+        }
+
+        @Nested
+        class Quando_listar_usuarios_ativos {
+
+            @Test
+            void deve_retornar_apenas_usuarios_ativos() {
+                List<UsuarioResponseDTO> usuarios = Arrays.asList(
+                        new UsuarioResponseDTO(
+                                UUID.randomUUID(),
+                                "João Silva",
+                                "joao@email.com",
+                                true,
+                                Set.of("USER")
+                        )
+                );
+
+                when(usuarioService.listAtivos()).thenReturn(usuarios);
+
+                ResponseEntity<List<UsuarioResponseDTO>> resposta = usuarioController.listAtivos();
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertEquals(1, resposta.getBody().size());
+                assertTrue(resposta.getBody().get(0).ativo());
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_buscar_usuario_por_id {
+
         UUID usuarioId;
 
         @BeforeEach
         void setup() {
             usuarioId = UUID.randomUUID();
-            usuario = new Usuario();
-            usuario.setId(usuarioId);
-            usuario.setNome("João Silva");
-            usuario.setEmail("joao@email.com");
-            usuario.setSenha("senha123");
-            usuario.setAtivo(true);
-            usuario.setRoles(new HashSet<>());
         }
 
         @Nested
-        class Quando_criar_usuario {
-
-            ResponseEntity<UsuarioDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(usuarioService.criar(any(Usuario.class))).thenReturn(usuario);
-                resposta = usuarioController.criar(usuario);
-            }
-
-            @Test
-            void deve_retornar_status_created() {
-                assertEquals(HttpStatus.CREATED, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_usuario_criado() {
-                assertNotNull(resposta.getBody());
-                assertEquals("João Silva", resposta.getBody().getNome());
-                assertEquals("joao@email.com", resposta.getBody().getEmail());
-            }
-
-            @Test
-            void deve_chamar_service_criar() {
-                verify(usuarioService, times(1)).criar(any(Usuario.class));
-            }
-        }
-
-        @Nested
-        class Quando_buscar_por_id {
-
-            ResponseEntity<UsuarioDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(usuarioService.buscarPorId(usuarioId)).thenReturn(Optional.of(usuario));
-                resposta = usuarioController.buscarPorId(usuarioId);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
+        class Quando_usuario_existe {
 
             @Test
             void deve_retornar_usuario_encontrado() {
+                UsuarioResponseDTO usuarioResponse = new UsuarioResponseDTO(
+                        usuarioId,
+                        "João Silva",
+                        "joao@email.com",
+                        true,
+                        Set.of("USER")
+                );
+
+                when(usuarioService.findById(usuarioId)).thenReturn(usuarioResponse);
+
+                ResponseEntity<UsuarioResponseDTO> resposta = usuarioController.findById(usuarioId);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
                 assertNotNull(resposta.getBody());
-                assertEquals("João Silva", resposta.getBody().getNome());
-            }
-        }
-
-        @Nested
-        class Quando_buscar_por_email {
-
-            ResponseEntity<UsuarioDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(usuarioService.buscarPorEmail("joao@email.com")).thenReturn(Optional.of(usuario));
-                resposta = usuarioController.buscarPorEmail("joao@email.com");
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_usuario_com_email_correto() {
-                assertNotNull(resposta.getBody());
-                assertEquals("joao@email.com", resposta.getBody().getEmail());
-            }
-        }
-
-        @Nested
-        class Quando_atualizar_usuario {
-
-            ResponseEntity<UsuarioDTO> resposta;
-            Usuario usuarioAtualizado;
-
-            @BeforeEach
-            void setup() {
-                usuarioAtualizado = new Usuario();
-                usuarioAtualizado.setNome("João Silva Atualizado");
-                usuarioAtualizado.setEmail("joao@email.com");
-
-                when(usuarioService.atualizar(eq(usuarioId), any(Usuario.class))).thenReturn(usuario);
-                resposta = usuarioController.atualizar(usuarioId, usuarioAtualizado);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_chamar_service_atualizar() {
-                verify(usuarioService, times(1)).atualizar(eq(usuarioId), any(Usuario.class));
-            }
-        }
-
-        @Nested
-        class Quando_desativar_usuario {
-
-            ResponseEntity<Void> resposta;
-
-            @BeforeEach
-            void setup() {
-                doNothing().when(usuarioService).desativar(usuarioId);
-                resposta = usuarioController.desativar(usuarioId);
-            }
-
-            @Test
-            void deve_retornar_status_no_content() {
-                assertEquals(HttpStatus.NO_CONTENT, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_chamar_service_desativar() {
-                verify(usuarioService, times(1)).desativar(usuarioId);
-            }
-        }
-
-        @Nested
-        class Quando_deletar_usuario {
-
-            ResponseEntity<Void> resposta;
-
-            @BeforeEach
-            void setup() {
-                doNothing().when(usuarioService).deletar(usuarioId);
-                resposta = usuarioController.deletar(usuarioId);
-            }
-
-            @Test
-            void deve_retornar_status_no_content() {
-                assertEquals(HttpStatus.NO_CONTENT, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_chamar_service_deletar() {
-                verify(usuarioService, times(1)).deletar(usuarioId);
-            }
-        }
-
-        @Nested
-        class Quando_adicionar_role {
-
-            ResponseEntity<UsuarioDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                Role role = new Role();
-                role.setNome("ROLE_ADMIN");
-                usuario.getRoles().add(role);
-
-                when(usuarioService.adicionarRole(usuarioId, "ROLE_ADMIN")).thenReturn(usuario);
-                resposta = usuarioController.adicionarRole(usuarioId, "ROLE_ADMIN");
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_chamar_service_adicionar_role() {
-                verify(usuarioService, times(1)).adicionarRole(usuarioId, "ROLE_ADMIN");
+                assertEquals("João Silva", resposta.getBody().nome());
             }
         }
     }
 
     @Nested
-    class Dado_um_usuario_inexistente {
+    class Dado_uma_requisicao_para_buscar_usuario_por_email {
+
+        String email;
+
+        @BeforeEach
+        void setup() {
+            email = "joao@email.com";
+        }
+
+        @Nested
+        class Quando_usuario_existe {
+
+            @Test
+            void deve_retornar_usuario_encontrado() {
+                UsuarioResponseDTO usuarioResponse = new UsuarioResponseDTO(
+                        UUID.randomUUID(),
+                        "João Silva",
+                        email,
+                        true,
+                        Set.of("USER")
+                );
+
+                when(usuarioService.findByEmail(email)).thenReturn(usuarioResponse);
+
+                ResponseEntity<UsuarioResponseDTO> resposta = usuarioController.findByEmail(email);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertEquals(email, resposta.getBody().email());
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_atualizar_usuario {
+
+        UUID usuarioId;
+        UsuarioRequestDTO dto;
+
+        @BeforeEach
+        void setup() {
+            usuarioId = UUID.randomUUID();
+            dto = new UsuarioRequestDTO(
+                    "João Silva Atualizado",
+                    "joao@email.com",
+                    "novaSenha123"
+            );
+        }
+
+        @Nested
+        class Quando_usuario_existe {
+
+            @Test
+            void deve_atualizar_usuario_com_sucesso() {
+                UsuarioResponseDTO usuarioAtualizado = new UsuarioResponseDTO(
+                        usuarioId,
+                        "João Silva Atualizado",
+                        "joao@email.com",
+                        true,
+                        Set.of("USER")
+                );
+
+                when(usuarioService.update(eq(usuarioId), any(UsuarioRequestDTO.class)))
+                        .thenReturn(usuarioAtualizado);
+
+                ResponseEntity<UsuarioResponseDTO> resposta = usuarioController.update(usuarioId, dto);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                verify(usuarioService).update(eq(usuarioId), any(UsuarioRequestDTO.class));
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_desativar_usuario {
 
         UUID usuarioId;
 
@@ -233,146 +249,79 @@ class UsuarioControllerTest {
         }
 
         @Nested
-        class Quando_buscar_por_id {
-
-            ResponseEntity<UsuarioDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(usuarioService.buscarPorId(usuarioId)).thenReturn(Optional.empty());
-                resposta = usuarioController.buscarPorId(usuarioId);
-            }
+        class Quando_usuario_existe {
 
             @Test
-            void deve_retornar_status_not_found() {
-                assertEquals(HttpStatus.NOT_FOUND, resposta.getStatusCode());
-            }
+            void deve_desativar_usuario_com_sucesso() {
+                doNothing().when(usuarioService).deactivate(usuarioId);
 
-            @Test
-            void nao_deve_retornar_corpo() {
-                assertNull(resposta.getBody());
+                ResponseEntity<Void> resposta = usuarioController.deactivate(usuarioId);
+
+                assertEquals(HttpStatus.NO_CONTENT, resposta.getStatusCode());
+                verify(usuarioService).deactivate(usuarioId);
             }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_deletar_usuario {
+
+        UUID usuarioId;
+
+        @BeforeEach
+        void setup() {
+            usuarioId = UUID.randomUUID();
         }
 
         @Nested
-        class Quando_deletar_usuario {
-
-            ResponseEntity<Void> resposta;
-
-            @BeforeEach
-            void setup() {
-                doThrow(new IllegalArgumentException("Usuário não encontrado"))
-                        .when(usuarioService).deletar(usuarioId);
-                resposta = usuarioController.deletar(usuarioId);
-            }
+        class Quando_usuario_existe {
 
             @Test
-            void deve_retornar_status_not_found() {
-                assertEquals(HttpStatus.NOT_FOUND, resposta.getStatusCode());
+            void deve_deletar_usuario_com_sucesso() {
+                doNothing().when(usuarioService).delete(usuarioId);
+
+                ResponseEntity<Void> resposta = usuarioController.delete(usuarioId);
+
+                assertEquals(HttpStatus.NO_CONTENT, resposta.getStatusCode());
+                verify(usuarioService).delete(usuarioId);
             }
         }
     }
 
     @Nested
-    class Dado_um_email_duplicado {
+    class Dado_uma_requisicao_para_adicionar_role {
 
-        Usuario usuario;
+        UUID usuarioId;
+        String role;
 
         @BeforeEach
         void setup() {
-            usuario = new Usuario();
-            usuario.setNome("Maria Santos");
-            usuario.setEmail("maria@email.com");
-            usuario.setSenha("senha456");
+            usuarioId = UUID.randomUUID();
+            role = "ADMIN";
         }
 
         @Nested
-        class Quando_criar_usuario {
-
-            ResponseEntity<UsuarioDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(usuarioService.criar(any(Usuario.class)))
-                        .thenThrow(new IllegalArgumentException("Email já cadastrado"));
-                resposta = usuarioController.criar(usuario);
-            }
+        class Quando_role_valida {
 
             @Test
-            void deve_retornar_status_bad_request() {
-                assertEquals(HttpStatus.BAD_REQUEST, resposta.getStatusCode());
+            void deve_adicionar_role_com_sucesso() {
+                UsuarioResponseDTO usuarioComNovaRole = new UsuarioResponseDTO(
+                        usuarioId,
+                        "João Silva",
+                        "joao@email.com",
+                        true,
+                        Set.of("USER", "ADMIN")
+                );
+
+                when(usuarioService.addRole(usuarioId, role)).thenReturn(usuarioComNovaRole);
+
+                ResponseEntity<UsuarioResponseDTO> resposta = usuarioController.addRole(usuarioId, role);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertTrue(resposta.getBody().roles().contains("ADMIN"));
+                verify(usuarioService).addRole(usuarioId, role);
             }
-        }
-    }
-
-    @Nested
-    class Quando_listar_todos_usuarios {
-
-        List<Usuario> usuarios;
-        ResponseEntity<List<UsuarioDTO>> resposta;
-
-        @BeforeEach
-        void setup() {
-            Usuario usuario1 = new Usuario();
-            usuario1.setId(UUID.randomUUID());
-            usuario1.setNome("João");
-            usuario1.setEmail("joao@email.com");
-            usuario1.setRoles(new HashSet<>());
-
-            Usuario usuario2 = new Usuario();
-            usuario2.setId(UUID.randomUUID());
-            usuario2.setNome("Maria");
-            usuario2.setEmail("maria@email.com");
-            usuario2.setRoles(new HashSet<>());
-
-            usuarios = Arrays.asList(usuario1, usuario2);
-
-            when(usuarioService.listarTodos()).thenReturn(usuarios);
-            resposta = usuarioController.listarTodos();
-        }
-
-        @Test
-        void deve_retornar_status_ok() {
-            assertEquals(HttpStatus.OK, resposta.getStatusCode());
-        }
-
-        @Test
-        void deve_retornar_lista_com_dois_usuarios() {
-            assertNotNull(resposta.getBody());
-            assertEquals(2, resposta.getBody().size());
-        }
-    }
-
-    @Nested
-    class Quando_listar_usuarios_ativos {
-
-        List<Usuario> usuarios;
-        ResponseEntity<List<UsuarioDTO>> resposta;
-
-        @BeforeEach
-        void setup() {
-            Usuario usuario1 = new Usuario();
-            usuario1.setId(UUID.randomUUID());
-            usuario1.setNome("João");
-            usuario1.setAtivo(true);
-            usuario1.setRoles(new HashSet<>());
-
-            usuarios = Arrays.asList(usuario1);
-
-            when(usuarioService.listarAtivos()).thenReturn(usuarios);
-            resposta = usuarioController.listarAtivos();
-        }
-
-        @Test
-        void deve_retornar_status_ok() {
-            assertEquals(HttpStatus.OK, resposta.getStatusCode());
-        }
-
-        @Test
-        void deve_retornar_apenas_usuarios_ativos() {
-            assertNotNull(resposta.getBody());
-            assertEquals(1, resposta.getBody().size());
-            assertTrue(resposta.getBody().get(0).getAtivo());
         }
     }
 }

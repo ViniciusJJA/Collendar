@@ -1,10 +1,6 @@
 package projeto.collendar.controller;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayNameGeneration;
-import org.junit.jupiter.api.DisplayNameGenerator;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -15,10 +11,14 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import projeto.collendar.model.Calendario;
-import projeto.collendar.model.Usuario;
+import projeto.collendar.dtos.request.CalendarioRequestDTO;
+import projeto.collendar.dtos.response.CalendarioResponseDTO;
+import projeto.collendar.exception.AccessDeniedException;
 import projeto.collendar.service.CalendarioService;
+import projeto.collendar.service.CompartilhamentoService;
+import projeto.collendar.utils.SecurityUtils;
 
+import java.time.LocalDateTime;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -32,14 +32,67 @@ class CalendarioControllerTest {
     @Mock
     private CalendarioService calendarioService;
 
+    @Mock
+    private CompartilhamentoService compartilhamentoService;
+
+    @Mock
+    private SecurityUtils securityUtils;
+
     @InjectMocks
     private CalendarioController calendarioController;
 
     @Nested
-    class Dado_um_calendario_valido {
+    class Dado_uma_requisicao_para_criar_calendario {
 
-        Calendario calendario;
-        Usuario usuario;
+        CalendarioRequestDTO dto;
+        UUID usuarioId;
+
+        @BeforeEach
+        void setup() {
+            usuarioId = UUID.randomUUID();
+            dto = new CalendarioRequestDTO(
+                    "Trabalho",
+                    "Calendário de trabalho",
+                    "#FF5733"
+            );
+        }
+
+        @Nested
+        class Quando_dados_validos {
+
+            @Test
+            void deve_criar_calendario_com_sucesso() {
+                CalendarioResponseDTO calendarioResponse = new CalendarioResponseDTO(
+                        UUID.randomUUID(),
+                        "Trabalho",
+                        "Calendário de trabalho",
+                        "#FF5733",
+                        usuarioId,
+                        "João Silva",
+                        LocalDateTime.now(),
+                        LocalDateTime.now(),
+                        true,
+                        null
+                );
+
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.create(any(CalendarioRequestDTO.class), eq(usuarioId)))
+                        .thenReturn(calendarioResponse);
+
+                ResponseEntity<CalendarioResponseDTO> resposta = calendarioController.create(dto);
+
+                assertEquals(HttpStatus.CREATED, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertEquals("Trabalho", resposta.getBody().nome());
+                assertTrue(resposta.getBody().proprietario());
+                verify(calendarioService).create(any(CalendarioRequestDTO.class), eq(usuarioId));
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_buscar_calendario_por_id {
+
         UUID calendarioId;
         UUID usuarioId;
 
@@ -47,376 +100,438 @@ class CalendarioControllerTest {
         void setup() {
             calendarioId = UUID.randomUUID();
             usuarioId = UUID.randomUUID();
-
-            usuario = new Usuario();
-            usuario.setId(usuarioId);
-            usuario.setNome("João Silva");
-
-            calendario = new Calendario();
-            calendario.setId(calendarioId);
-            calendario.setNome("Trabalho");
-            calendario.setDescricao("Calendário de trabalho");
-            calendario.setCor("#FF5733");
-            calendario.setUsuario(usuario);
         }
 
         @Nested
-        class Quando_criar_calendario {
-
-            ResponseEntity<CalendarioDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(calendarioService.criar(any(Calendario.class), eq(usuarioId))).thenReturn(calendario);
-                resposta = calendarioController.criar(calendario, usuarioId);
-            }
-
-            @Test
-            void deve_retornar_status_created() {
-                assertEquals(HttpStatus.CREATED, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_calendario_criado() {
-                assertNotNull(resposta.getBody());
-                assertEquals("Trabalho", resposta.getBody().getNome());
-                assertEquals("#FF5733", resposta.getBody().getCor());
-            }
-
-            @Test
-            void deve_chamar_service_criar() {
-                verify(calendarioService, times(1)).criar(any(Calendario.class), eq(usuarioId));
-            }
-        }
-
-        @Nested
-        class Quando_buscar_por_id {
-
-            ResponseEntity<CalendarioDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(calendarioService.buscarPorId(calendarioId)).thenReturn(Optional.of(calendario));
-                resposta = calendarioController.buscarPorId(calendarioId);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
+        class Quando_usuario_tem_acesso {
 
             @Test
             void deve_retornar_calendario_encontrado() {
+                CalendarioResponseDTO calendarioResponse = new CalendarioResponseDTO(
+                        calendarioId,
+                        "Trabalho",
+                        "Calendário de trabalho",
+                        "#FF5733",
+                        usuarioId,
+                        "João Silva",
+                        LocalDateTime.now(),
+                        LocalDateTime.now(),
+                        true,
+                        null
+                );
+
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(compartilhamentoService.hasAccess(calendarioId, usuarioId)).thenReturn(true);
+                when(calendarioService.findById(calendarioId)).thenReturn(calendarioResponse);
+
+                ResponseEntity<CalendarioResponseDTO> resposta = calendarioController.findById(calendarioId);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
                 assertNotNull(resposta.getBody());
-                assertEquals("Trabalho", resposta.getBody().getNome());
+                assertEquals("Trabalho", resposta.getBody().nome());
             }
         }
 
         @Nested
-        class Quando_listar_por_usuario {
-
-            ResponseEntity<List<CalendarioDTO>> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(calendarioService.listarPorUsuario(usuarioId)).thenReturn(Arrays.asList(calendario));
-                resposta = calendarioController.listarPorUsuario(usuarioId);
-            }
+        class Quando_usuario_nao_tem_acesso {
 
             @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+            void deve_lancar_access_denied_exception() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(compartilhamentoService.hasAccess(calendarioId, usuarioId)).thenReturn(false);
+
+                assertThrows(AccessDeniedException.class,
+                        () -> calendarioController.findById(calendarioId));
+                verify(calendarioService, never()).findById(calendarioId);
             }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_listar_meus_calendarios {
+
+        UUID usuarioId;
+
+        @BeforeEach
+        void setup() {
+            usuarioId = UUID.randomUUID();
+        }
+
+        @Nested
+        class Quando_listar_calendarios {
 
             @Test
             void deve_retornar_calendarios_do_usuario() {
+                List<CalendarioResponseDTO> calendarios = Arrays.asList(
+                        new CalendarioResponseDTO(
+                                UUID.randomUUID(),
+                                "Trabalho",
+                                "Calendário de trabalho",
+                                "#FF5733",
+                                usuarioId,
+                                "João Silva",
+                                LocalDateTime.now(),
+                                LocalDateTime.now(),
+                                true,
+                                null
+                        ),
+                        new CalendarioResponseDTO(
+                                UUID.randomUUID(),
+                                "Pessoal",
+                                "Calendário pessoal",
+                                "#00FF00",
+                                usuarioId,
+                                "João Silva",
+                                LocalDateTime.now(),
+                                LocalDateTime.now(),
+                                true,
+                                null
+                        )
+                );
+
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.listByUsuario(usuarioId)).thenReturn(calendarios);
+
+                ResponseEntity<List<CalendarioResponseDTO>> resposta = calendarioController.listMeus();
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
                 assertNotNull(resposta.getBody());
-                assertEquals(1, resposta.getBody().size());
-                assertEquals("Trabalho", resposta.getBody().get(0).getNome());
+                assertEquals(2, resposta.getBody().size());
             }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_listar_calendarios_acessiveis {
+
+        UUID usuarioId;
+
+        @BeforeEach
+        void setup() {
+            usuarioId = UUID.randomUUID();
         }
 
         @Nested
-        class Quando_listar_por_usuario_paginado {
-
-            ResponseEntity<Page<CalendarioDTO>> resposta;
-            Pageable pageable;
-
-            @BeforeEach
-            void setup() {
-                pageable = PageRequest.of(0, 10);
-                Page<Calendario> page = new PageImpl<>(Arrays.asList(calendario));
-
-                when(calendarioService.listarPorUsuarioPaginado(usuarioId, pageable)).thenReturn(page);
-                resposta = calendarioController.listarPorUsuarioPaginado(usuarioId, pageable);
-            }
+        class Quando_listar_calendarios_acessiveis {
 
             @Test
-            void deve_retornar_status_ok() {
+            void deve_retornar_proprios_e_compartilhados() {
+                List<CalendarioResponseDTO> proprios = Arrays.asList(
+                        new CalendarioResponseDTO(
+                                UUID.randomUUID(),
+                                "Meu Trabalho",
+                                "Descrição",
+                                "#FF5733",
+                                usuarioId,
+                                "João Silva",
+                                LocalDateTime.now(),
+                                LocalDateTime.now(),
+                                true,
+                                null
+                        )
+                );
+
+                List<CalendarioResponseDTO> compartilhados = Arrays.asList(
+                        new CalendarioResponseDTO(
+                                UUID.randomUUID(),
+                                "Trabalho Compartilhado",
+                                "Descrição",
+                                "#00FF00",
+                                UUID.randomUUID(),
+                                "Maria Santos",
+                                LocalDateTime.now(),
+                                LocalDateTime.now(),
+                                false,
+                                null
+                        )
+                );
+
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.listByUsuario(usuarioId)).thenReturn(proprios);
+                when(compartilhamentoService.listSharedWithUsuario(usuarioId)).thenReturn(compartilhados);
+
+                ResponseEntity<List<CalendarioResponseDTO>> resposta = calendarioController.listAcessiveis();
+
                 assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertEquals(2, resposta.getBody().size());
             }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_listar_calendarios_paginado {
+
+        UUID usuarioId;
+        Pageable pageable;
+
+        @BeforeEach
+        void setup() {
+            usuarioId = UUID.randomUUID();
+            pageable = PageRequest.of(0, 10);
+        }
+
+        @Nested
+        class Quando_listar_paginado {
 
             @Test
-            void deve_retornar_pagina_com_calendarios() {
+            void deve_retornar_pagina_de_calendarios() {
+                CalendarioResponseDTO calendario = new CalendarioResponseDTO(
+                        UUID.randomUUID(),
+                        "Trabalho",
+                        "Descrição",
+                        "#FF5733",
+                        usuarioId,
+                        "João Silva",
+                        LocalDateTime.now(),
+                        LocalDateTime.now(),
+                        true,
+                        null
+                );
+
+                Page<CalendarioResponseDTO> page = new PageImpl<>(Arrays.asList(calendario));
+
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.listByUsuarioPaginated(usuarioId, pageable)).thenReturn(page);
+
+                ResponseEntity<Page<CalendarioResponseDTO>> resposta =
+                        calendarioController.listMeusPaginado(pageable);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
                 assertNotNull(resposta.getBody());
                 assertEquals(1, resposta.getBody().getTotalElements());
             }
         }
-
-        @Nested
-        class Quando_atualizar_calendario {
-
-            ResponseEntity<CalendarioDTO> resposta;
-            Calendario calendarioAtualizado;
-
-            @BeforeEach
-            void setup() {
-                calendarioAtualizado = new Calendario();
-                calendarioAtualizado.setNome("Trabalho Atualizado");
-                calendarioAtualizado.setDescricao("Nova descrição");
-                calendarioAtualizado.setCor("#00FF00");
-
-                when(calendarioService.atualizar(eq(calendarioId), any(Calendario.class))).thenReturn(calendario);
-                resposta = calendarioController.atualizar(calendarioId, calendarioAtualizado);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_chamar_service_atualizar() {
-                verify(calendarioService, times(1)).atualizar(eq(calendarioId), any(Calendario.class));
-            }
-        }
-
-        @Nested
-        class Quando_deletar_calendario {
-
-            ResponseEntity<Void> resposta;
-
-            @BeforeEach
-            void setup() {
-                doNothing().when(calendarioService).deletar(calendarioId);
-                resposta = calendarioController.deletar(calendarioId);
-            }
-
-            @Test
-            void deve_retornar_status_no_content() {
-                assertEquals(HttpStatus.NO_CONTENT, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_chamar_service_deletar() {
-                verify(calendarioService, times(1)).deletar(calendarioId);
-            }
-        }
-
-        @Nested
-        class Quando_verificar_proprietario {
-
-            ResponseEntity<Boolean> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(calendarioService.verificarProprietario(calendarioId, usuarioId)).thenReturn(true);
-                resposta = calendarioController.verificarProprietario(calendarioId, usuarioId);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_true_quando_eh_proprietario() {
-                assertTrue(resposta.getBody());
-            }
-        }
-
-        @Nested
-        class Quando_contar_por_usuario {
-
-            ResponseEntity<Long> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(calendarioService.contarPorUsuario(usuarioId)).thenReturn(5L);
-                resposta = calendarioController.contarPorUsuario(usuarioId);
-            }
-
-            @Test
-            void deve_retornar_status_ok() {
-                assertEquals(HttpStatus.OK, resposta.getStatusCode());
-            }
-
-            @Test
-            void deve_retornar_quantidade_correta() {
-                assertEquals(5L, resposta.getBody());
-            }
-        }
     }
 
     @Nested
-    class Dado_um_calendario_inexistente {
+    class Dado_uma_requisicao_para_buscar_por_nome {
 
-        UUID calendarioId;
-
-        @BeforeEach
-        void setup() {
-            calendarioId = UUID.randomUUID();
-        }
-
-        @Nested
-        class Quando_buscar_por_id {
-
-            ResponseEntity<CalendarioDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(calendarioService.buscarPorId(calendarioId)).thenReturn(Optional.empty());
-                resposta = calendarioController.buscarPorId(calendarioId);
-            }
-
-            @Test
-            void deve_retornar_status_not_found() {
-                assertEquals(HttpStatus.NOT_FOUND, resposta.getStatusCode());
-            }
-
-            @Test
-            void nao_deve_retornar_corpo() {
-                assertNull(resposta.getBody());
-            }
-        }
-
-        @Nested
-        class Quando_deletar_calendario {
-
-            ResponseEntity<Void> resposta;
-
-            @BeforeEach
-            void setup() {
-                doThrow(new IllegalArgumentException("Calendário não encontrado"))
-                        .when(calendarioService).deletar(calendarioId);
-                resposta = calendarioController.deletar(calendarioId);
-            }
-
-            @Test
-            void deve_retornar_status_not_found() {
-                assertEquals(HttpStatus.NOT_FOUND, resposta.getStatusCode());
-            }
-        }
-    }
-
-    @Nested
-    class Dado_um_usuario_inexistente {
-
-        Calendario calendario;
-        UUID usuarioId;
-
-        @BeforeEach
-        void setup() {
-            usuarioId = UUID.randomUUID();
-            calendario = new Calendario();
-            calendario.setNome("Teste");
-        }
-
-        @Nested
-        class Quando_criar_calendario {
-
-            ResponseEntity<CalendarioDTO> resposta;
-
-            @BeforeEach
-            void setup() {
-                when(calendarioService.criar(any(Calendario.class), eq(usuarioId)))
-                        .thenThrow(new IllegalArgumentException("Usuário não encontrado"));
-                resposta = calendarioController.criar(calendario, usuarioId);
-            }
-
-            @Test
-            void deve_retornar_status_bad_request() {
-                assertEquals(HttpStatus.BAD_REQUEST, resposta.getStatusCode());
-            }
-        }
-    }
-
-    @Nested
-    class Quando_buscar_por_nome {
-
-        Calendario calendario;
-        ResponseEntity<Page<CalendarioDTO>> resposta;
         Pageable pageable;
 
         @BeforeEach
         void setup() {
             pageable = PageRequest.of(0, 10);
-
-            Usuario usuario = new Usuario();
-            usuario.setId(UUID.randomUUID());
-            usuario.setNome("João");
-
-            calendario = new Calendario();
-            calendario.setId(UUID.randomUUID());
-            calendario.setNome("Trabalho");
-            calendario.setUsuario(usuario);
-
-            Page<Calendario> page = new PageImpl<>(Arrays.asList(calendario));
-
-            when(calendarioService.buscarPorNome("Trabalho", pageable)).thenReturn(page);
-            resposta = calendarioController.buscarPorNome("Trabalho", pageable);
         }
 
-        @Test
-        void deve_retornar_status_ok() {
-            assertEquals(HttpStatus.OK, resposta.getStatusCode());
-        }
+        @Nested
+        class Quando_buscar_por_nome {
 
-        @Test
-        void deve_retornar_calendarios_encontrados() {
-            assertNotNull(resposta.getBody());
-            assertEquals(1, resposta.getBody().getTotalElements());
-            assertEquals("Trabalho", resposta.getBody().getContent().get(0).getNome());
+            @Test
+            void deve_retornar_calendarios_encontrados() {
+                CalendarioResponseDTO calendario = new CalendarioResponseDTO(
+                        UUID.randomUUID(),
+                        "Trabalho",
+                        "Descrição",
+                        "#FF5733",
+                        UUID.randomUUID(),
+                        "João Silva",
+                        LocalDateTime.now(),
+                        LocalDateTime.now(),
+                        true,
+                        null
+                );
+
+                Page<CalendarioResponseDTO> page = new PageImpl<>(Arrays.asList(calendario));
+
+                when(calendarioService.searchByNome("Trabalho", pageable)).thenReturn(page);
+
+                ResponseEntity<Page<CalendarioResponseDTO>> resposta =
+                        calendarioController.searchByNome("Trabalho", pageable);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertEquals(1, resposta.getBody().getTotalElements());
+            }
         }
     }
 
     @Nested
-    class Quando_listar_todos_calendarios {
+    class Dado_uma_requisicao_para_atualizar_calendario {
 
-        List<Calendario> calendarios;
-        ResponseEntity<List<CalendarioDTO>> resposta;
+        UUID calendarioId;
+        UUID usuarioId;
+        CalendarioRequestDTO dto;
 
         @BeforeEach
         void setup() {
-            Usuario usuario = new Usuario();
-            usuario.setId(UUID.randomUUID());
-            usuario.setNome("João");
-
-            Calendario calendario1 = new Calendario();
-            calendario1.setId(UUID.randomUUID());
-            calendario1.setNome("Trabalho");
-            calendario1.setUsuario(usuario);
-
-            Calendario calendario2 = new Calendario();
-            calendario2.setId(UUID.randomUUID());
-            calendario2.setNome("Pessoal");
-            calendario2.setUsuario(usuario);
-
-            calendarios = Arrays.asList(calendario1, calendario2);
-
-            when(calendarioService.listarTodos()).thenReturn(calendarios);
-            resposta = calendarioController.listarTodos();
+            calendarioId = UUID.randomUUID();
+            usuarioId = UUID.randomUUID();
+            dto = new CalendarioRequestDTO(
+                    "Trabalho Atualizado",
+                    "Nova descrição",
+                    "#00FF00"
+            );
         }
 
-        @Test
-        void deve_retornar_status_ok() {
-            assertEquals(HttpStatus.OK, resposta.getStatusCode());
+        @Nested
+        class Quando_usuario_eh_proprietario {
+
+            @Test
+            void deve_atualizar_calendario_com_sucesso() {
+                CalendarioResponseDTO calendarioAtualizado = new CalendarioResponseDTO(
+                        calendarioId,
+                        "Trabalho Atualizado",
+                        "Nova descrição",
+                        "#00FF00",
+                        usuarioId,
+                        "João Silva",
+                        LocalDateTime.now(),
+                        LocalDateTime.now(),
+                        true,
+                        null
+                );
+
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(true);
+                when(calendarioService.update(eq(calendarioId), any(CalendarioRequestDTO.class)))
+                        .thenReturn(calendarioAtualizado);
+
+                ResponseEntity<CalendarioResponseDTO> resposta =
+                        calendarioController.update(calendarioId, dto);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertNotNull(resposta.getBody());
+                assertEquals("Trabalho Atualizado", resposta.getBody().nome());
+            }
         }
 
-        @Test
-        void deve_retornar_todos_calendarios() {
-            assertNotNull(resposta.getBody());
-            assertEquals(2, resposta.getBody().size());
+        @Nested
+        class Quando_usuario_nao_eh_proprietario {
+
+            @Test
+            void deve_lancar_access_denied_exception() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(false);
+
+                assertThrows(AccessDeniedException.class,
+                        () -> calendarioController.update(calendarioId, dto));
+                verify(calendarioService, never()).update(any(), any());
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_deletar_calendario {
+
+        UUID calendarioId;
+        UUID usuarioId;
+
+        @BeforeEach
+        void setup() {
+            calendarioId = UUID.randomUUID();
+            usuarioId = UUID.randomUUID();
+        }
+
+        @Nested
+        class Quando_usuario_eh_proprietario {
+
+            @Test
+            void deve_deletar_calendario_com_sucesso() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(true);
+                doNothing().when(calendarioService).delete(calendarioId);
+
+                ResponseEntity<Void> resposta = calendarioController.delete(calendarioId);
+
+                assertEquals(HttpStatus.NO_CONTENT, resposta.getStatusCode());
+                verify(calendarioService).delete(calendarioId);
+            }
+        }
+
+        @Nested
+        class Quando_usuario_nao_eh_proprietario {
+
+            @Test
+            void deve_lancar_access_denied_exception() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(calendarioService.isOwner(calendarioId, usuarioId)).thenReturn(false);
+
+                assertThrows(AccessDeniedException.class,
+                        () -> calendarioController.delete(calendarioId));
+                verify(calendarioService, never()).delete(calendarioId);
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_verificar_se_pode_editar {
+
+        UUID calendarioId;
+        UUID usuarioId;
+
+        @BeforeEach
+        void setup() {
+            calendarioId = UUID.randomUUID();
+            usuarioId = UUID.randomUUID();
+        }
+
+        @Nested
+        class Quando_verificar_permissao_edicao {
+
+            @Test
+            void deve_retornar_true_quando_pode_editar() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(compartilhamentoService.canEdit(calendarioId, usuarioId)).thenReturn(true);
+
+                ResponseEntity<Boolean> resposta = calendarioController.canEdit(calendarioId);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertTrue(resposta.getBody());
+            }
+
+            @Test
+            void deve_retornar_false_quando_nao_pode_editar() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(compartilhamentoService.canEdit(calendarioId, usuarioId)).thenReturn(false);
+
+                ResponseEntity<Boolean> resposta = calendarioController.canEdit(calendarioId);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertFalse(resposta.getBody());
+            }
+        }
+    }
+
+    @Nested
+    class Dado_uma_requisicao_para_contar_eventos {
+
+        UUID calendarioId;
+        UUID usuarioId;
+
+        @BeforeEach
+        void setup() {
+            calendarioId = UUID.randomUUID();
+            usuarioId = UUID.randomUUID();
+        }
+
+        @Nested
+        class Quando_usuario_tem_acesso {
+
+            @Test
+            void deve_retornar_quantidade_de_eventos() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(compartilhamentoService.hasAccess(calendarioId, usuarioId)).thenReturn(true);
+                when(calendarioService.countByUsuario(calendarioId)).thenReturn(5L);
+
+                ResponseEntity<Long> resposta = calendarioController.countEventos(calendarioId);
+
+                assertEquals(HttpStatus.OK, resposta.getStatusCode());
+                assertEquals(5L, resposta.getBody());
+            }
+        }
+
+        @Nested
+        class Quando_usuario_nao_tem_acesso {
+
+            @Test
+            void deve_lancar_access_denied_exception() {
+                when(securityUtils.getLoggedUserId()).thenReturn(usuarioId);
+                when(compartilhamentoService.hasAccess(calendarioId, usuarioId)).thenReturn(false);
+
+                assertThrows(AccessDeniedException.class,
+                        () -> calendarioController.countEventos(calendarioId));
+            }
         }
     }
 }
